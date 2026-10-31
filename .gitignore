@@ -4,3 +4,8 @@ node_modules/
 .DS_Store
 .vercel
 .next/
+
+# generated
+public/precache.json
+next-env.d.ts
+*.tsbuildinfo
