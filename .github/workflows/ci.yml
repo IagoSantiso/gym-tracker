@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Auditoría de dependencias
+        run: npm audit --audit-level=high --omit=dev
+      - name: Typecheck + comprobaciones de seguridad
+        run: npm run lint
+      - name: Tests unitarios (incluye SQL + RLS en PGlite)
+        run: npm test
+      - name: SQL generado al día
+        run: npm run db:sql && git diff --exit-code supabase/migrations
+      - name: Build
+        run: npm run build
+      - name: Seguridad del bundle
+        run: node scripts/check-safety.mjs
+      - name: E2E (Playwright, móvil, modo avión)
+        run: |
+          npm i --no-save playwright
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: tests/e2e/screenshots

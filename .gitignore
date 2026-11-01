@@ -4,3 +4,10 @@ node_modules/
 .DS_Store
 .vercel
 .next/
+
+# generated
+public/precache.json
+next-env.d.ts
+*.tsbuildinfo
+public/pdf.worker.min.mjs
+tests/e2e/screenshots/
