@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { KEYS, store } from "@/lib/storage";
+
 
 interface Persisted {
   base: number;
@@ -75,7 +75,8 @@ export function useRestTimer(onFinish: (info: FinishInfo) => void) {
 
   // Restaurar tras recargar / matar la app durante un descanso
   useEffect(() => {
-    const p = store.get<Persisted | null>(KEYS.timer, null);
+    let p: Persisted | null = null;
+    try { p = JSON.parse(localStorage.getItem("gymTimer") ?? "null"); } catch { p = null; }
     if (p && Number.isFinite(p.base) && p.base > 0) {
       setBase(p.base);
       if (p.endAt && p.endAt > Date.now()) {
@@ -92,11 +93,11 @@ export function useRestTimer(onFinish: (info: FinishInfo) => void) {
 
   useEffect(() => {
     if (!hydrated.current) return;
-    store.set(KEYS.timer, {
-      base,
-      secs,
-      endAt: running ? endAt.current : null,
-    } satisfies Persisted);
+    try {
+      localStorage.setItem("gymTimer", JSON.stringify({ base, secs, endAt: running ? endAt.current : null } satisfies Persisted));
+    } catch {
+      /* sin almacenamiento */
+    }
   }, [base, secs, running]);
 
   const run = useCallback((s: number) => {

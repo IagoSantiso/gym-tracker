@@ -1,5 +1,5 @@
-import { GymApp } from "@/components/GymApp";
+import { TodayPage } from "@/components/pages/TodayPage";
 
 export default function Page() {
-  return <GymApp />;
+  return <TodayPage />;
 }

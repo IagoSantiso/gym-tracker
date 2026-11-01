@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Gym Tracker",
-    short_name: "Gym",
-    description: "Plan de gimnasio de 2 o 3 días: cada músculo, una vez por semana.",
+    name: "NEXO — Salud y rendimiento",
+    short_name: "NEXO",
+    description: "Entrenamiento, nutrición, diabetes tipo 1 y recuperación. Funciona sin conexión.",
     lang: "es",
     start_url: "/",
     scope: "/",
