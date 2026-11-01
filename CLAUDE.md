@@ -4,7 +4,7 @@ App personal de salud y rendimiento (antes Gym Tracker). Next.js 16 App Router +
 
 ## Comandos
 - `npm run dev` · `npm run build` · `npm start`
-- `npm test` (Vitest, unit) · `npm run test:e2e` (Playwright contra build de producción) · `npm run typecheck` · `npm run lint`
+- `npm test` (Vitest, unit) · `npm run test:e2e` (Playwright contra build de producción; requiere `npm run build`) · `npm run typecheck` · `npm run lint` (tsc + `scripts/check-safety.mjs`)
 - `npm run db:sql` regenera `supabase/migrations/*_nexo_schema.sql` desde `lib/db/schema.ts` (no editar el SQL a mano)
 - Scripts: `extract-images`, `import-exercises` (free-exercise-db), `generate-icons`, `generate-precache` (automático en `prebuild`)
 
@@ -18,3 +18,5 @@ App personal de salud y rendimiento (antes Gym Tracker). Next.js 16 App Router +
 7. **Offline**: rutas estáticas sin segmentos dinámicos; si añades una ruta, se precachea sola (prebuild escanea `app/**/page.tsx`).
 8. **Datos de prueba**: sintéticos (`tests/fixtures`). Nunca datos reales de salud en el repo.
 9. Decisiones nuevas → `docs/DECISIONS.md`; estado → `PROJECT_STATUS.md`.
+10. Generaciones (plan, menú, propuestas) siempre a través de los servicios (`lib/services/*`), que serializan con `serial()` para evitar duplicados.
+11. Nuevas herramientas de IA: definir en `lib/ai/tools.ts` (Zod estricto, sin campos clínicos), ejecutor en `lib/ai/client-tools.ts`, y test en `tests/unit/ai.test.ts`.

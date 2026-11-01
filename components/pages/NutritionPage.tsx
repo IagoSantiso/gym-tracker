@@ -65,7 +65,7 @@ function MealRow({ e, cat, onSwap }: { e: MealEntry; cat: Catalog; onSwap: () =>
   const t = recipeNutrition(r.ingredients, cat.food, e.servings, r.servings).totals;
   const hint = absorptionHint(t);
   return (
-    <div className="li" style={{ alignItems: "flex-start", opacity: e.status === "skipped" ? 0.55 : 1 }}>
+    <div className="li wrap" style={{ alignItems: "flex-start", opacity: e.status === "skipped" ? 0.55 : 1 }}>
       <div className="grow">
         <div className="xs dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 750 }}>{SLOT_LABEL[e.slot]}{e.locked ? " · 🔒" : ""}</div>
         <div className="t">{r.name}{e.servings !== 1 ? ` · ×${e.servings.toLocaleString("es-ES")}` : ""}</div>
@@ -74,7 +74,7 @@ function MealRow({ e, cat, onSwap }: { e: MealEntry; cat: Catalog; onSwap: () =>
         {hint && <div className="xs" style={{ color: "var(--info)" }}>{hint}</div>}
         {e.replacedFrom && <div className="xs dim">Sustituye a: {cat.recipe(e.replacedFrom)?.name}</div>}
       </div>
-      <div className="row" style={{ gap: 4, justifyContent: "flex-end" }}>
+      <div className="acts">
         {e.status === "eaten" ? <span className="badge ok">Hecha</span> : (
           <>
             <button className="btn sm primary" onClick={async () => { await markEaten(e); toast("Comida registrada"); }}><Icon name="check" />Hecha</button>

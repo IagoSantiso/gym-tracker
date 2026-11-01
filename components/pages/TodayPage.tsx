@@ -43,7 +43,8 @@ export function TodayPage() {
       const ease = proposeEaseToday(items, today, c);
       if (ease) await createProposal(ease);
     })();
-  }, [today, ws, p.availability]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today, ws, JSON.stringify(p.availability)]);
 
   const plan = useLive(async () => (await weekItems(ws)).filter((i) => i.date === today), [ws, today]) ?? [];
   const weekAll = useLive(() => weekItems(ws), [ws]) ?? [];
@@ -109,15 +110,17 @@ export function TodayPage() {
           {plan.length ? (
             <div className="list">
               {plan.map((it) => (
-                <div className="li" key={it.id}>
+                <div className="li wrap" key={it.id}>
                   <div className="grow">
                     <div className="t" style={{ textDecoration: it.status === "cancelled" ? "line-through" : undefined }}>{it.title}</div>
                     <div className="s">{it.kind === "rest" ? it.notes : `${it.durationMin} min · intensidad ${({ easy: "suave", moderate: "moderada", hard: "dura", rest: "—" } as const)[it.intensity]}`}{it.runSpec?.structure ? ` · ${it.runSpec.structure}` : ""}</div>
                   </div>
+                  <div className="acts">
                   <span className={`badge ${it.status === "done" ? "ok" : it.status === "cancelled" ? "bad" : ""}`}>{STATUS[it.status]}</span>
                   {it.status !== "done" && it.status !== "cancelled" && it.kind === "strength" && it.templateId && <Link className="btn sm primary" href={`/entrenamiento/sesion?t=${it.templateId}&d=${it.dayIndex}&pi=${it.id}`}>Empezar</Link>}
                   {it.status !== "done" && it.status !== "cancelled" && it.kind !== "strength" && it.kind !== "rest" && <button className="btn sm" onClick={() => setQuick("activity")}>Registrar</button>}
                   {it.status === "planned" && it.kind !== "rest" && <button className="btn sm ghost" onClick={async () => { await patch("planned_items", it.id, { status: "cancelled" }); toast("Sesión cancelada (sin culpas)"); }}>Hoy no</button>}
+                  </div>
                 </div>
               ))}
             </div>

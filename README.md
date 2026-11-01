@@ -1,47 +1,46 @@
-# Gym Tracker
+# NEXO — Personal Health & Performance OS
 
-Plan de gimnasio en modo **2 o 3 días por semana**, trabajando cada grupo muscular una vez por semana.
-Web app instalable (PWA) hecha con Next.js (App Router) + TypeScript + Tailwind.
+App personal (PWA, local-first) que une **entrenamiento** (gimnasio, carrera, bici, cinta), **nutrición** (menús, hidratos por comida, lista de la compra), **diabetes tipo 1** (datos CGM importados de LibreView: TIR, AGP, episodios, contexto con actividad y comidas), **recuperación** y un **asistente IA** (Claude por defecto) que propone cambios que tú apruebas.
 
-- Fotos reales de cada ejercicio (posición inicial y final) y mapa muscular (frente / espalda)
-- Series pulsables con temporizador de descanso (correcto aunque el móvil bloquee la pantalla)
-- Registro de peso y repeticiones, historial de sesiones
-- Modo "Adaptación" (2 series) para las primeras semanas
-- Instalable y 100 % funcional sin conexión; la pantalla no se apaga durante la sesión (Wake Lock)
+> No es un dispositivo médico: nunca calcula ni sugiere dosis de insulina, ratios ni correcciones. Ver [`docs/SAFETY_AND_PRIVACY.md`](docs/SAFETY_AND_PRIVACY.md).
 
-## Desarrollo
+| Hoy | Sesión (claro / oscuro) | Diabetes | AGP | Menú |
+| --- | --- | --- | --- | --- |
+| ![Hoy](docs/screenshots/hoy.jpg) | ![Sesión](docs/screenshots/sesion-oscuro.jpg) | ![Diabetes](docs/screenshots/diabetes.jpg) | ![AGP](docs/screenshots/agp.jpg) | ![Menú](docs/screenshots/menu.jpg) |
 
+## Características
+- **Offline de verdad**: todos los datos en IndexedDB; todas las pantallas y fotos precacheadas. Funciona en modo avión.
+- **Gimnasio**: 56 ejercicios con fotos reales (inicio/final) y mapa muscular, rutinas (2 originales + full body + constructor con arrastrar), sesión serie a serie (kg, reps, RIR), temporizador de descanso robusto al bloqueo de pantalla, Wake Lock, progresión doble sugerida («Hoy: X kg · Aplicar»), 1RM estimado, estancamiento, descarga, sustituciones.
+- **Carrera/bici/cinta**: registro manual, TCX/GPX, Polar AccessLink; planes 5K/10K/media prudentes; carga sRPE y ratio agudo:crónico (descriptivos).
+- **Plan semanal**: motor de reglas auditable (sin días duros seguidos, descanso, interferencia piernas→carrera), plan original vs vigente vs real, bloqueos y propuestas reversibles.
+- **Nutrición**: alimentos con fuente y licencia (USDA dominio público, Open Food Facts ODbL, etiqueta), hidratos totales vs disponibles, crudo/cocinado, 28 recetas, menú determinista con sustituciones, lista de la compra con despensa, objetivos estimados con rango, fórmula y margen.
+- **Diabetes**: importación CSV LibreView (ES/EN, mg/dL o mmol/L, DST, duplicados, mapeo manual), PDF AGP experimental, métricas del consenso con cobertura, AGP, episodios, vista diaria con comidas/actividad/eventos, observaciones ejercicio↔glucosa, protocolo personal, informe imprimible para consulta.
+- **Asistente IA** (opcional): Claude u OpenAI vía servidor; herramientas de solo lectura sobre tus datos (glucosa solo agregada) y de propuesta con aprobación; guardarraíles clínicos.
+- **Privacidad**: sin cuentas por defecto; nube (Supabase con RLS) e IA son opt-in y granulares; exportar/borrar todo.
+
+## Uso rápido
 ```bash
 npm install
-npm run dev          # http://localhost:3000 (el service worker solo se registra en producción)
-npm run build && npm start   # prueba la PWA real (offline, instalación)
-npm run typecheck
+npm run dev                     # http://localhost:3000
+npm run build && npm start      # producción (service worker activo)
 ```
+Sin variables de entorno funciona todo salvo sincronización, IA y Polar. Configúralas con [`.env.example`](.env.example).
 
-Despliegue: importar el repositorio en Vercel (sin configuración extra).
+## Calidad
+```bash
+npm run lint       # TypeScript estricto + comprobaciones de seguridad (secretos, server-only)
+npm test           # 108 tests unitarios: CGM, nutrición, progresión, planificador, guardarraíles, IA, sync, SQL+RLS (PGlite)
+npm run test:e2e   # Playwright móvil contra la build: flujos completos + modo avión
+```
+CI en `.github/workflows/ci.yml`.
 
-## Estructura
+## Despliegue
+1. Vercel → importar el repositorio (Next.js detectado automáticamente).
+2. (Opcional) Supabase: aplicar `supabase/migrations/*.sql`, activar magic link, definir `NEXT_PUBLIC_SUPABASE_*`, desactivar registros públicos tras crear tu usuario.
+3. (Opcional) IA: `ANTHROPIC_API_KEY` (+ `ALLOWED_EMAILS`). Polar: `POLAR_CLIENT_ID/SECRET/REDIRECT_URI` + `TOKEN_ENCRYPTION_KEY`.
 
-| Ruta | Contenido |
-| --- | --- |
-| `lib/plan.ts` | Datos del plan (2 y 3 días) y biblioteca de ejercicios |
-| `lib/muscles.ts` | Formas SVG del mapa muscular |
-| `hooks/useRestTimer.ts` | Temporizador calculado sobre la hora de fin |
-| `hooks/useWakeLock.ts` | Pantalla encendida durante la sesión |
-| `hooks/useGymState.ts` | Estado persistente (`gymUI`, `gymSets`, `gymLoads`, `gymLogs`) |
-| `public/sw.js` | Service worker (caché offline de app y fotos) |
-| `legacy/index.html` | App original de un solo archivo (referencia y fuente de las fotos) |
-
-## Scripts
-
-- `npm run extract-images`: extrae las fotos base64 de `legacy/index.html` a `public/exercises/<id>-0.jpg` y `<id>-1.jpg`.
-- `npm run generate-icons`: regenera los iconos PWA en `public/icons`.
-- `prebuild` (automático): genera `public/precache.json` con los recursos que el service worker guarda al instalar.
-
-## Hoja de ruta
-
-Ver [`PROMPT_CLAUDE_CODE.md`](PROMPT_CLAUDE_CODE.md): Fase 1 (migración + PWA, hecha), Fase 2 (Supabase + sync offline-first), Fase 3 (progreso y progresión automática), Fase 4 (asistente IA, opcional).
+## Documentación
+[Visión](docs/PRODUCT_VISION.md) · [Arquitectura](docs/ARCHITECTURE.md) · [Modelo de datos](docs/DATA_MODEL.md) · [Seguridad y privacidad](docs/SAFETY_AND_PRIVACY.md) · [Integraciones](docs/INTEGRATIONS.md) · [Roadmap](docs/ROADMAP.md) · [Decisiones](docs/DECISIONS.md) · [Estado](PROJECT_STATUS.md) · [Prompt maestro (Claude)](docs/PROMPT_MAESTRO_CLAUDE.md)
 
 ## Créditos
-
-Fotos de ejercicios: [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (dominio público, Unlicense).
+Fotos de ejercicios: [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (dominio público). Alimentos: USDA FoodData Central (dominio público); Open Food Facts (ODbL) bajo demanda.

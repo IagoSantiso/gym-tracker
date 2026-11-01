@@ -8,6 +8,7 @@ import { recipeNutrition, type FoodLike } from "@/lib/domain/nutrition/calc";
 import { MENU_VERSION, generateMenu, slotsFor, type RecipeLike } from "@/lib/domain/nutrition/menu";
 import { buildShoppingList } from "@/lib/domain/nutrition/shopping";
 import { addDays, localDate } from "@/lib/domain/time";
+import { serial } from "./lock";
 
 export interface Catalog {
   foods: FoodLike[];
@@ -30,7 +31,11 @@ export async function loadCatalog(): Promise<Catalog> {
   return { foods, food: (id) => fmap.get(id) ?? SEED_FOOD_BY_ID[id], recipes, recipe: (id) => rmap.get(id) };
 }
 
-export async function generateWeekMenu(weekStart: string, opts: { kcalTarget: [number, number] | null; keepLocked: boolean }) {
+export function generateWeekMenu(weekStart: string, opts: { kcalTarget: [number, number] | null; keepLocked: boolean }) {
+  return serial("menu", () => generateWeekMenuInner(weekStart, opts));
+}
+
+async function generateWeekMenuInner(weekStart: string, opts: { kcalTarget: [number, number] | null; keepLocked: boolean }) {
   const cat = await loadCatalog();
   const prefs = await tbl("preferences").get("me");
   const rp = await all("recipe_prefs");

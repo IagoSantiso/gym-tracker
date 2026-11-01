@@ -23,3 +23,8 @@ Decisiones reversibles tomadas sin consultar, por petición expresa de ejecució
 | D17 | Navegación: barra inferior en móvil (Hoy, Plan, Entreno, Comida, Diabetes, Más) y lateral en escritorio | 8 áreas no caben en una barra móvil | — |
 | D18 | Sin modo demo con datos de salud ficticios en la UI; los datos sintéticos solo existen en tests | Evita mezclar datos falsos con reales | — |
 | D19 | Rutas estáticas (sin segmentos dinámicos); parámetros por query | Precache completo para offline | — |
+| D20 | Operaciones de generación (plan, menú, propuestas) serializadas con un cerrojo en memoria | Los efectos de React podían lanzar dos generaciones concurrentes y duplicar sesiones (detectado en E2E) | — |
+| D21 | La insulina del CSV de LibreView se importa como `glucose_events` de tipo histórico y nunca se usa en cálculos | Conservar el dato original sin crear capacidad de dosificación | No importar esas columnas |
+| D22 | Playwright no es dependencia del repo; CI lo instala con `--no-save` | El entorno local trae un Chromium preinstalado ligado a su versión | Añadir `@playwright/test` si se migra a su runner |
+| D23 | El contexto (fecha, zona, unidad) se añade al PRIMER mensaje de cada conversación con la IA, no al prompt de sistema | Mantiene el prompt de sistema estable (caché) y el historial solo crece (compatible con thinking preservado) | Mensajes de sistema a mitad de conversación |
+| D24 | Las restricciones numéricas/longitud de los esquemas de herramientas se eliminan del esquema enviado (modo estricto) y se validan con Zod en servidor y cliente | El modo estricto no admite minimum/maxLength/pattern | — |

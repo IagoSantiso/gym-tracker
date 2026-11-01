@@ -1,6 +1,6 @@
 # Roadmap y criterios de aceptación
 
-Estado actualizado en `PROJECT_STATUS.md`. Todas las fases se ejecutan de forma autónoma (ver `docs/PROMPT_MAESTRO_CLAUDE.md`, sección 19).
+Estado actualizado en `PROJECT_STATUS.md`. **Fases 0–7 implementadas (v1, 2026-11-01).** Todas las fases se ejecutan de forma autónoma (ver `docs/PROMPT_MAESTRO_CLAUDE.md`, sección 19).
 
 | Fase | Entregable | Criterios de aceptación |
 | --- | --- | --- |

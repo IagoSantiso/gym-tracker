@@ -7,6 +7,7 @@ import { validateOps, type ProposalDraft } from "@/lib/domain/planning/adapt";
 import { addDays, weekStartOf } from "@/lib/domain/time";
 import { buildRunPlan } from "@/lib/domain/training/endurance";
 import { scanDeep } from "@/lib/domain/safety/guardrails";
+import { serial } from "./lock";
 
 export async function weekItems(weekStart: string): Promise<PlannedItem[]> {
   return (await tbl("planned_items").where("weekStart").equals(weekStart).toArray()).filter(active).sort((a, b) => a.date.localeCompare(b.date) || a.sortOrder - b.sortOrder);
@@ -30,7 +31,11 @@ async function runSessionsFor(weekStart: string): Promise<RunSpec[]> {
   ];
 }
 
-export async function generatePlan(weekStart: string, opts: { keepLocked?: boolean } = {}): Promise<{ notes: string[] }> {
+export function generatePlan(weekStart: string, opts: { keepLocked?: boolean } = {}): Promise<{ notes: string[] }> {
+  return serial("plan", () => generatePlanInner(weekStart, opts));
+}
+
+async function generatePlanInner(weekStart: string, opts: { keepLocked?: boolean } = {}): Promise<{ notes: string[] }> {
   const profile = await tbl("profiles").get("me");
   const prefs = await tbl("preferences").get("me");
   const template = prefs?.activeTemplateId ? await tbl("workout_templates").get(prefs.activeTemplateId) : undefined;
@@ -62,9 +67,11 @@ export async function generatePlan(weekStart: string, opts: { keepLocked?: boole
   return { notes };
 }
 
-export async function ensurePlan(date: string) {
+export function ensurePlan(date: string) {
   const ws = weekStartOf(date);
-  if (!(await weekItems(ws)).length) await generatePlan(ws);
+  return serial("plan", async () => {
+    if (!(await weekItems(ws)).length) await generatePlanInner(ws);
+  });
 }
 
 export async function toggleDayLock(weekStart: string, date: string) {
@@ -76,7 +83,11 @@ export async function toggleDayLock(weekStart: string, date: string) {
 
 /* ───────── Propuestas ───────── */
 
-export async function createProposal(d: ProposalDraft): Promise<Proposal | { error: string }> {
+export function createProposal(d: ProposalDraft): Promise<Proposal | { error: string }> {
+  return serial("proposals", () => createProposalInner(d));
+}
+
+async function createProposalInner(d: ProposalDraft): Promise<Proposal | { error: string }> {
   const errs = validateOps(d.ops);
   if (errs.length) return { error: errs.join("; ") };
   const scan = scanDeep(d);

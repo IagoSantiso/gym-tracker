@@ -12,6 +12,9 @@ import type { ExerciseSet } from "./types";
 
 let initPromise: Promise<void> | null = null;
 
+/** Solo tests: fuerza a reinicializar contra una base nueva. */
+export const resetInitForTests = () => { initPromise = null; };
+
 export function ensureInitialized(): Promise<void> {
   initPromise ??= doInit().catch((e) => {
     initPromise = null;

@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { NexoDB, getDb, setDbForTests, tbl } from "@/lib/db/db";
 import { all, patch, put, remove } from "@/lib/db/repo";
 import { deleteAllRemote, syncOnce, type RemoteAdapter, type Row } from "@/lib/sync/engine";
-import { importLegacy, ensureInitialized } from "@/lib/db/init";
+import { importLegacy, ensureInitialized, resetInitForTests } from "@/lib/db/init";
 
 let n = 0;
 beforeEach(async () => {
   const db = new NexoDB(`test-${++n}`);
   setDbForTests(db);
+  resetInitForTests();
   await db.open();
 });
 
@@ -112,5 +113,18 @@ describe("motor de sincronización", () => {
   it("se niega a mezclar datos de otra cuenta en el mismo dispositivo", async () => {
     await syncOnce(memoryRemote("user-a"));
     await expect(syncOnce(memoryRemote("user-b"))).rejects.toThrow(/otra cuenta/);
+  });
+});
+
+describe("generación concurrente", () => {
+  it("dos ensurePlan simultáneos no duplican sesiones", async () => {
+    const { ensurePlan, weekItems } = await import("@/lib/services/plan");
+    const { localDate, weekStartOf } = await import("@/lib/domain/time");
+    await ensureInitialized();
+    await Promise.all([ensurePlan(localDate()), ensurePlan(localDate()), ensurePlan(localDate())]);
+    const items = await weekItems(weekStartOf(localDate()));
+    const keys = items.map((i) => `${i.date}|${i.title}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(items.filter((i) => i.kind === "strength")).toHaveLength(3);
   });
 });

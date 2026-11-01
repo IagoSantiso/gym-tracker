@@ -44,7 +44,7 @@ Decisión: **evolucionar** sobre la base existente (no reescribir). Ver `DECISIO
 5. **UI (`app/**`, `components/**`)**: componentes cliente con `useLiveQuery`. Sin lógica de negocio crítica en componentes.
 
 ## Offline
-- Todas las rutas son estáticas (prerender) y se precachean en la instalación del SW junto con sus chunks y las fotos.
+- Todas las rutas son estáticas (prerender). `prebuild` escanea `app/**/page.tsx` y escribe `public/precache.json`; el SW (`nexo-v2`) precachea cada ruta, los chunks que referencia su HTML, las 112 fotos, iconos y el worker de pdf.js.
 - Navegaciones: stale-while-revalidate por ruta. Peticiones RSC: solo red; si fallan, Next hace navegación completa y el SW sirve la página cacheada.
 - Escrituras: siempre en IndexedDB primero; el outbox se sincroniza al volver la conexión.
 - IA e integraciones degradan con mensajes claros; el registro manual nunca depende de ellas.
@@ -53,6 +53,19 @@ Decisión: **evolucionar** sobre la base existente (no reescribir). Ver `DECISIO
 - Claves (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `POLAR_CLIENT_SECRET`, `TOKEN_ENCRYPTION_KEY`) solo en servidor (`import "server-only"`).
 - `/api/*` exige sesión Supabase válida y email en `ALLOWED_EMAILS`; sin Supabase, la IA queda desactivada salvo `AI_ALLOW_ANONYMOUS=true` (solo local).
 - Cabeceras de seguridad (CSP, frame-ancestors, referrer-policy) en `next.config.ts`.
+
+## Mapa del código
+```
+app/                      rutas (8 áreas + sesión, rutina, informe, onboarding) y app/api (IA, Polar)
+components/pages/         pantallas · components/{ui,charts,training,log,plan,settings,shell}
+lib/db/                   esquema único, Dexie, repositorio, init/migración v2, SQL
+lib/domain/               lógica pura: cgm, nutrition, training, planning, review, safety, import, time, units
+lib/services/             casos de uso sobre IndexedDB (plan, nutrición, CGM, datos, Polar, revisión)
+lib/ai/                   herramientas y bucle de chat (cliente) · lib/server/ai: proveedores y guardarraíles (servidor)
+lib/sync/                 motor de sync + adaptador Supabase + gestor
+public/sw.js              service worker
+tests/unit, tests/e2e     Vitest y Playwright
+```
 
 ## Rendimiento
 - Gráficas SVG propias (sin librería pesada), import dinámico de `pdfjs-dist` solo al importar PDF.

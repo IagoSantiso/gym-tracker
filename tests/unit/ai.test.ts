@@ -5,7 +5,7 @@ import { toOpenAIInput } from "@/lib/server/ai/openai";
 import { ProviderError, type ProviderInput, type ProviderResult } from "@/lib/server/ai/types";
 import { TOOLS, jsonSchemaFor, strictSchema, validateToolInput, type ChatItem, type ChatRequest } from "@/lib/ai/tools";
 import { NexoDB, setDbForTests } from "@/lib/db/db";
-import { ensureInitialized } from "@/lib/db/init";
+import { ensureInitialized, resetInitForTests } from "@/lib/db/init";
 import { put, all } from "@/lib/db/repo";
 import { executeTool } from "@/lib/ai/client-tools";
 import { BLOCKED_RESPONSE, EMERGENCY_RESPONSE } from "@/lib/domain/safety/guardrails";
@@ -99,6 +99,7 @@ describe("herramientas en cliente", () => {
   beforeEach(async () => {
     const db = new NexoDB(`ai-${++n}`);
     setDbForTests(db);
+    resetInitForTests();
     await db.open();
     await ensureInitialized();
   });
