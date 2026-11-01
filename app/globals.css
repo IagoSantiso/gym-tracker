@@ -359,3 +359,7 @@ table.data th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-sp
 .cal div.today{outline:2px solid var(--accent);outline-offset:-2px}
 .cal .h{background:none;aspect-ratio:auto;font-weight:750;color:var(--dim)}
 }
+@layer components {
+.print-only{display:none}
+@media print{.print-only{display:block}}
+}

@@ -8,6 +8,7 @@ import { ensureInitialized } from "@/lib/db/init";
 import { usePreferences, useProfile } from "@/lib/db/hooks";
 import { startSync } from "@/lib/sync/manager";
 import { SyncIndicator } from "./SyncIndicator";
+import { BreakReminder } from "./BreakReminder";
 
 export const NAV: { href: string; label: string; short: string; icon: IconName }[] = [
   { href: "/", label: "Hoy", short: "Hoy", icon: "home" },
@@ -63,6 +64,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <ToastProvider>
+      {ready && <BreakReminder />}
       <div className="app">
         <a href="#main" className="sr-only">Saltar al contenido</a>
         <header className="topbar no-print">
