@@ -115,8 +115,22 @@ export async function acceptProposal(id: string): Promise<{ ok: boolean; error?:
   });
   await applyOps(ops);
   await patch("proposals", id, { status: "accepted", decidedAt: nowIso(), inverse: inverseFor(p, created) });
+  await afterMealChanges(ops);
   await audit("proposal_accepted", { kind: p.kind, origin: p.origin });
   return { ok: true };
+}
+
+/** Si la propuesta toca el menú, recalcula la lista de la compra de las semanas afectadas. */
+async function afterMealChanges(ops: ProposalOp[]) {
+  const ids = ops.filter((o) => o.table === "meal_entries" && o.op !== "create").map((o) => (o as { id: string }).id);
+  if (!ids.length) return;
+  const { refreshShoppingList } = await import("./nutrition");
+  const weeks = new Set<string>();
+  for (const id of ids) {
+    const e = await tbl("meal_entries").get(id);
+    if (e) weeks.add(weekStartOf(e.date));
+  }
+  for (const w of weeks) await refreshShoppingList(w);
 }
 
 export async function rejectProposal(id: string, reason: string | null) {
@@ -129,5 +143,6 @@ export async function revertProposal(id: string) {
   if (!p || p.status !== "accepted" || !p.inverse) return;
   await applyOps(p.inverse);
   await patch("proposals", id, { status: "reverted", decidedAt: nowIso() });
+  await afterMealChanges(p.inverse);
   await audit("proposal_reverted", { id });
 }

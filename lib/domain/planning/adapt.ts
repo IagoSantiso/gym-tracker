@@ -121,6 +121,9 @@ export const PROPOSAL_WHITELIST: Record<string, string[] | "*"> = {
   workout_templates: "*",
   preferences: ["deloadActiveWeek", "adaptationMode", "deloadEveryWeeks"],
   goals: ["weightLossRatePct", "notes"],
+  recipes: "*",
+  recipe_ingredients: "*",
+  user_notes: "*",
 };
 
 export function validateOps(ops: ProposalOp[]): string[] {
