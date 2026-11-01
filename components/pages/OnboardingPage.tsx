@@ -22,20 +22,33 @@ export function OnboardingPage() {
   const d = useDiabetes();
   const consents = useTable("consents") ?? [];
   const toast = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [fail, setFail] = useState<string | null>(null);
+  const withTimeout = <T,>(p: Promise<T>, label: string) =>
+    Promise.race([p, new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`"${label}" tarda demasiado. Cierra las otras pestañas de la app y reintenta.`)), 20000))]);
   const finish = async () => {
-    await patch("profiles", "me", { onboardingCompletedAt: nowIso(), draft: false });
-    const ws = weekStartOf(localDate());
-    await generatePlan(ws);
-    await generateWeekMenu(ws, { kcalTarget: null, keepLocked: true });
-    toast("¡Listo! Plan y menú de la semana creados");
-    location.href = "/";
+    setFail(null);
+    try {
+      const ws = weekStartOf(localDate());
+      setBusy("Guardando tu perfil…");
+      await withTimeout(patch("profiles", "me", { onboardingCompletedAt: nowIso(), draft: false }), "Guardar perfil");
+      setBusy("Creando el plan de la semana…");
+      await withTimeout(generatePlan(ws), "Crear plan");
+      setBusy("Creando el menú y la lista de la compra…");
+      await withTimeout(generateWeekMenu(ws, { kcalTarget: null, keepLocked: true }), "Crear menú");
+      toast("¡Listo! Plan y menú de la semana creados");
+      location.assign("/");
+    } catch (e) {
+      setBusy(null);
+      setFail(e instanceof Error ? e.message : String(e));
+    }
   };
   const nav = (
     <div className="row between" style={{ marginTop: 16 }}>
       <button className="btn ghost" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>Atrás</button>
       <span className="small dim">{step + 1} / {STEPS.length}</span>
       {step < STEPS.length - 1 ? <button className="btn primary" onClick={() => setStep((s) => s + 1)}>{step === 0 ? "Empezar" : "Siguiente"}</button>
-        : <button className="btn primary" onClick={() => void finish()}>Crear mi semana</button>}
+        : <button className="btn primary" disabled={!!busy} onClick={() => void finish()}>{busy ? "Creando…" : "Crear mi semana"}</button>}
     </div>
   );
   return (
@@ -141,6 +154,8 @@ export function OnboardingPage() {
         <Card title="Todo listo">
           <p className="small">Al continuar se generará tu <b>plan de la semana</b> (fuerza, carrera, bici y descanso según tu disponibilidad) y un <b>menú</b> con lista de la compra. Todo es editable y puedes bloquear días o comidas.</p>
           <p className="small muted">Siguiente paso recomendado: importar tu CSV de LibreView en Diabetes → Importar.</p>
+          {busy && <Notice kind="info" icon="clock"><span role="status">{busy}</span></Notice>}
+          {fail && <Notice kind="danger">No se pudo completar: {fail} Puedes <Link href="/">continuar sin plan</Link> y generarlo luego desde Plan → Regenerar.</Notice>}
           {nav}
         </Card>
       )}
