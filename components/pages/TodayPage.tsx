@@ -18,7 +18,7 @@ import { SPORT_LABEL } from "@/lib/domain/training/endurance";
 import { proposeEaseToday, proposeReschedule } from "@/lib/domain/planning/adapt";
 import { createProposal, ensurePlan, weekItems } from "@/lib/services/plan";
 import { loadCatalog, markEaten, weekMeals } from "@/lib/services/nutrition";
-import { readingsBetween } from "@/lib/services/cgm";
+import { agpPdfReports, readingsBetween } from "@/lib/services/cgm";
 import { currentTargets } from "@/lib/services/targets";
 import type { PlannedItem } from "@/lib/db/types";
 
@@ -26,6 +26,7 @@ const STATUS: Record<PlannedItem["status"], string> = { planned: "Previsto", don
 
 export function TodayPage() {
   const p = useProfile();
+  const pdfReports = useLive(() => agpPdfReports(), []) ?? [];
   const dia = useDiabetes();
   const toast = useToast();
   const today = localDate(Date.now(), p.timezone);
@@ -190,7 +191,7 @@ export function TodayPage() {
                 </div>
                 <p className="xs dim" style={{ marginBottom: 0 }}>Hasta {new Date(glucose.last.ts).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" })} · cobertura {Math.round(glucose.m.coveragePct)} % · <b>no es tiempo real</b>. Para decisiones usa tu lector/app oficial.</p>
               </>
-            ) : <p className="small muted" style={{ margin: 0 }}>Sin datos importados. <Link href="/diabetes?tab=importar">Importar CSV</Link></p>}
+            ) : pdfReports[0] ? <p className="small" style={{ margin: 0 }}>Informe PDF importado · {pdfReports[0].reportSummary?.periodText ?? "periodo no reconocido"}. <Link href="/diabetes?tab=resumen">Ver métricas del informe</Link>. No incluye lecturas individuales ni datos en tiempo real.</p> : <p className="small muted" style={{ margin: 0 }}>Sin datos importados. <Link href="/diabetes?tab=importar">Importar PDF o CSV</Link></p>}
             <Link className="btn sm ghost" href="/diabetes?tab=protocolo" style={{ marginTop: 8 }}><Icon name="shield" />Mi protocolo</Link>
           </Card>
         )}

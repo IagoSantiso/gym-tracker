@@ -14,7 +14,7 @@ App personal (PWA, local-first) que une **entrenamiento** (gimnasio, carrera, bi
 - **Carrera/bici/cinta**: registro manual, TCX/GPX, Polar AccessLink; planes 5K/10K/media prudentes; carga sRPE y ratio agudo:crónico (descriptivos).
 - **Plan semanal**: motor de reglas auditable (sin días duros seguidos, descanso, interferencia piernas→carrera), plan original vs vigente vs real, bloqueos y propuestas reversibles.
 - **Nutrición**: alimentos con fuente y licencia (USDA dominio público, Open Food Facts ODbL, etiqueta), hidratos totales vs disponibles, crudo/cocinado, 28 recetas, menú determinista con sustituciones, lista de la compra con despensa, objetivos estimados con rango, fórmula y margen.
-- **Diabetes**: importación CSV LibreView (ES/EN, mg/dL o mmol/L, DST, duplicados, mapeo manual), PDF AGP experimental, métricas del consenso con cobertura, AGP, episodios, vista diaria con comidas/actividad/eventos, observaciones ejercicio↔glucosa, protocolo personal, informe imprimible para consulta.
+- **Diabetes**: importación CSV LibreView (ES/EN, mg/dL o mmol/L, DST, duplicados, mapeo manual), informes PDF AGP de LibreLink/LibreView (métricas resumidas, periodo, original cifrado y detección de duplicados), métricas del consenso con cobertura, AGP, episodios, vista diaria con comidas/actividad/eventos, observaciones ejercicio↔glucosa, protocolo personal, informe imprimible para consulta.
 - **Asistente IA** (opcional): Claude u OpenAI vía servidor; herramientas de solo lectura sobre tus datos (glucosa solo agregada) y de propuesta con aprobación; guardarraíles clínicos.
 - **Privacidad**: sin cuentas por defecto; nube (Supabase con RLS) e IA son opt-in y granulares; exportar/borrar todo.
 
