@@ -30,6 +30,13 @@ export function nowIso(): string {
   return new Date(t).toISOString();
 }
 
+/** nowIso() pero siempre posterior a `prev` (reloj atrasado o registro venido de otro dispositivo). */
+function after(prev: string | undefined): string {
+  const now = nowIso();
+  const p = prev ? Date.parse(prev) : 0;
+  return Number.isFinite(p) && p >= Date.parse(now) ? new Date(p + 1).toISOString() : now;
+}
+
 export type Input<T extends TableName> = Omit<Rec<T>, "id" | "createdAt" | "updatedAt"> &
   Partial<Pick<Rec<T>, "id" | "createdAt" | "updatedAt">>;
 
@@ -41,15 +48,23 @@ async function enqueue(table: TableName, ids: string[]) {
   await getDb().outbox.bulkAdd(ids.map((id) => ({ table, id, at })));
 }
 
-/** Inserta o reemplaza un registro completo. */
-export async function put<T extends TableName>(table: T, input: Input<T>): Promise<Rec<T>> {
+/** Marca de los valores por defecto: cualquier dato real (de este u otro dispositivo) gana. */
+export const SEED_TS = "2000-01-01T00:00:00.000Z";
+
+/**
+ * Inserta o reemplaza un registro completo. `seed` = valor por defecto (updatedAt antiguo
+ * para no pisar nunca datos reales al sincronizar). Si no, updatedAt siempre avanza respecto
+ * al anterior aunque el reloj de este dispositivo vaya atrasado.
+ */
+export async function put<T extends TableName>(table: T, input: Input<T>, opts: { seed?: boolean } = {}): Promise<Rec<T>> {
   const db = getDb();
   let saved!: Rec<T>;
   await db.transaction("rw", [db.table(table), db.outbox], async () => {
     const id = input.id ?? newId();
     const prev = (await tbl(table).get(id)) as Rec<T> | undefined;
     const now = nowIso();
-    saved = { ...input, id, createdAt: prev?.createdAt ?? input.createdAt ?? now, updatedAt: now } as Rec<T>;
+    const updatedAt = opts.seed ? SEED_TS : after(prev?.updatedAt);
+    saved = { ...input, id, createdAt: prev?.createdAt ?? input.createdAt ?? now, updatedAt } as Rec<T>;
     await tbl(table).put(saved);
     await enqueue(table, [id]);
   });
@@ -64,7 +79,7 @@ export async function patch<T extends TableName>(table: T, id: string, changes: 
   await db.transaction("rw", [db.table(table), db.outbox], async () => {
     const prev = (await tbl(table).get(id)) as Rec<T> | undefined;
     if (!prev) return;
-    saved = { ...prev, ...changes, id, updatedAt: nowIso() } as Rec<T>;
+    saved = { ...prev, ...changes, id, updatedAt: after(prev.updatedAt) } as Rec<T>;
     await tbl(table).put(saved);
     await enqueue(table, [id]);
   });
@@ -83,7 +98,7 @@ export async function remove<T extends TableName>(table: T, id: string | string[
     }
     const now = nowIso();
     const rows = (await tbl(table).bulkGet(ids)).filter(Boolean) as Rec<T>[];
-    await tbl(table).bulkPut(rows.map((r) => ({ ...r, deletedAt: now, updatedAt: now })));
+    await tbl(table).bulkPut(rows.map((r) => ({ ...r, deletedAt: now, updatedAt: after(r.updatedAt) })));
     await enqueue(table, rows.map((r) => r.id));
   });
   emit();

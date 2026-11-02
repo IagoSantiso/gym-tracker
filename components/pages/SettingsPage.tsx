@@ -403,30 +403,75 @@ function SyncTab() {
 function DataTab() {
   const toast = useToast();
   const [legacy, setLegacy] = useState("");
+  const [backup, setBackup] = useState("");
+  const [busy, setBusy] = useState(false);
   const [table, setTable] = useState<TableName>("weight_entries");
+  const restore = async (text: string) => {
+    if (!confirmAction("La copia sustituirá los datos de este dispositivo (perfil, menús, plan, registros). ¿Continuar?")) return;
+    setBusy(true);
+    try {
+      const r = await importBackup(text);
+      setBackup("");
+      alert(`Copia restaurada: ${r.restored} registros.`);
+      location.assign("/");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Copia no válida");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const copyBackup = async () => {
+    const text = await (await exportAll()).text();
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Copia copiada al portapapeles: pégala en Ajustes → Datos del otro dispositivo");
+    } catch {
+      toast("No se pudo copiar; usa «Compartir» o descarga el archivo");
+    }
+  };
+  const shareBackup = async () => {
+    const blob = await exportAll();
+    const file = new File([blob], `nexo-${new Date().toISOString().slice(0, 10)}.json`, { type: "application/json" });
+    try {
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: "Copia NEXO" });
+      else download(blob, file.name);
+    } catch { /* cancelado */ }
+  };
   return (
     <div className="stack">
       <Card title="Exportar" sub="Tus datos son tuyos: copia completa en JSON o tablas en CSV.">
         <div className="row">
           <button className="btn primary" onClick={async () => download(await exportAll(), `nexo-${new Date().toISOString().slice(0, 10)}.json`)}><Icon name="download" />Copia completa (JSON)</button>
+          <button className="btn" onClick={() => void copyBackup()}>Copiar copia</button>
+          <button className="btn" onClick={() => void shareBackup()}>Compartir</button>
           <select className="input" style={{ maxWidth: 240 }} value={table} onChange={(e) => setTable(e.target.value as TableName)} aria-label="Tabla a exportar">
             {TABLES.filter((t) => !t.serverOnly && t.name !== "raw_files").map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
           </select>
           <button className="btn" onClick={async () => download(await exportCsv(table), `${table}.csv`)}>CSV</button>
         </div>
       </Card>
-      <Card title="Restaurar copia" sub="Fusiona un JSON exportado de NEXO (no borra lo existente).">
-        <input type="file" accept="application/json,.json" onChange={async (e) => {
-          const f = e.target.files?.[0];
-          if (!f) return;
-          try { toast(`${await importBackup(await f.text())} registros restaurados`); } catch (err) { toast(err instanceof Error ? err.message : "Archivo no válido"); }
-        }} aria-label="Copia JSON" />
+      <Card title="Restaurar copia" sub="Pega aquí el contenido completo de una copia JSON de NEXO (o elige el archivo). La copia sustituye a los datos de este dispositivo: perfil, menús, plan e historial.">
+        <textarea className="input" style={{ minHeight: 110 }} value={backup} onChange={(e) => setBackup(e.target.value)} placeholder='{"app":"NEXO","schema":1,…}' aria-label="Copia JSON de NEXO" />
+        <div className="row" style={{ marginTop: 8 }}>
+          <button className="btn primary" disabled={!backup.trim() || busy} onClick={() => void restore(backup)}>Restaurar copia pegada</button>
+          <label className="btn ghost">Elegir archivo
+            <input type="file" accept=".json,application/json,text/plain,*/*" style={{ display: "none" }} onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (f) await restore(await f.text());
+            }} aria-label="Archivo de copia" />
+          </label>
+        </div>
       </Card>
       <Card title="Importar datos del Gym Tracker v2 (HTML)" sub="Los datos de la versión de un solo archivo viven en otro origen. En esa página abre la consola del navegador y ejecuta el comando; pega aquí el resultado.">
         <pre className="xs" style={{ whiteSpace: "pre-wrap", background: "var(--bg2)", padding: 10, borderRadius: 10 }}>copy(JSON.stringify(Object.fromEntries(["gymLogs","gymLoads","gymUI","gymSets"].map(k=&gt;[k,JSON.parse(localStorage.getItem(k)||"null")]))))</pre>
         <textarea className="input" style={{ minHeight: 90 }} value={legacy} onChange={(e) => setLegacy(e.target.value)} placeholder='{"gymLogs":[…],"gymLoads":{…}}' aria-label="JSON del Gym Tracker v2" />
         <button className="btn" style={{ marginTop: 8 }} disabled={!legacy.trim()} onClick={async () => {
-          try { const r = await importLegacy(JSON.parse(legacy)); toast(`${r.sessions} sesiones y ${r.sets} series importadas`); setLegacy(""); } catch { toast("JSON no válido"); }
+          let parsed: unknown;
+          try { parsed = JSON.parse(legacy); } catch { return toast("JSON no válido"); }
+          if ((parsed as { app?: string })?.app === "NEXO") { setLegacy(""); return void restore(JSON.stringify(parsed)); }
+          const r = await importLegacy(parsed as Parameters<typeof importLegacy>[0]);
+          toast(`${r.sessions} sesiones y ${r.sets} series importadas`);
+          setLegacy("");
         }}>Importar</button>
       </Card>
       <Card title="Borrar todos mis datos" sub="Elimina todo de este dispositivo y, si has iniciado sesión, también de la nube. No se puede deshacer.">

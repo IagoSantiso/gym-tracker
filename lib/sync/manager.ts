@@ -52,6 +52,8 @@ export async function syncNow(): Promise<void> {
     const at = nowIso();
     set({ status: "idle", lastSyncAt: at, pending: await pendingCount() });
     await put("sync_jobs", { startedAt, finishedAt: at, pushed: r.pushed, pulled: r.pulled, error: null });
+    // Dispositivo nuevo que acaba de adoptar los datos de la nube: recarga para partir de ellos.
+    if (r.first === "adopted" && typeof location !== "undefined") location.reload();
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     set({ status: navigator.onLine ? "error" : "offline", error: msg, pending: await pendingCount() });

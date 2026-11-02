@@ -1,9 +1,14 @@
 -- NEXO · esquema generado desde lib/db/schema.ts (no editar a mano: npm run db:sql)
 -- Requiere Supabase (schema auth). Todas las tablas: PK (user_id, id), RLS user_id = auth.uid().
 
+-- Cursor de sincronización + última-escritura-gana en el servidor: una actualización con
+-- updated_at más antiguo que el guardado se ignora (no pisa datos más nuevos de otro dispositivo).
 create or replace function public.nexo_touch() returns trigger
-language plpgsql as $$
+language plpgsql set search_path = '' as $$
 begin
+  if tg_op = 'UPDATE' and new.updated_at < old.updated_at then
+    return null;
+  end if;
   new.server_updated_at := now();
   return new;
 end $$;

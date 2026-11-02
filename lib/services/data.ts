@@ -1,7 +1,7 @@
 /** Exportación (JSON completo + CSV) y borrado de datos personales. */
 import { getDb, tbl } from "@/lib/db/db";
 import { TABLES } from "@/lib/db/schema";
-import { audit } from "@/lib/db/repo";
+import { audit, nowIso } from "@/lib/db/repo";
 import type { TableName } from "@/lib/db/types";
 import { deleteAllRemote } from "@/lib/sync/engine";
 import { getSupabase, supabaseAdapter } from "@/lib/sync/supabase";
@@ -40,21 +40,60 @@ export function download(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-/** Restaura un JSON exportado (fusiona por id; no borra lo existente). */
-export async function importBackup(json: string): Promise<number> {
-  const parsed = JSON.parse(json);
-  if (parsed?.app !== "NEXO" || typeof parsed.data !== "object") throw new Error("No es una copia de NEXO.");
-  let n = 0;
-  const db = getDb();
-  for (const t of TABLES) {
-    const rows = parsed.data[t.name];
-    if (!Array.isArray(rows) || t.serverOnly || t.name === "raw_files") continue;
-    const valid = rows.filter((r: unknown) => r && typeof r === "object" && typeof (r as { id?: unknown }).id === "string");
-    await db.table(t.name).bulkPut(valid);
-    if (t.sync) await db.outbox.bulkAdd(valid.map((r: { id: string }) => ({ table: t.name, id: r.id, at: new Date().toISOString() })));
-    n += valid.length;
+export interface RestoreResult {
+  restored: number;
+  replaced: number;
+}
+
+/**
+ * Restaura un JSON exportado de NEXO.
+ *  - mode "replace" (por defecto): la copia pasa a ser la verdad. Lo que había en este
+ *    dispositivo y no está en la copia se marca como borrado (y el borrado se sincroniza),
+ *    así no quedan dos menús o dos planes para la misma semana.
+ *  - mode "merge": solo añade/actualiza por id.
+ * Los registros restaurados reciben updatedAt nuevo para ganar en la sincronización.
+ */
+export async function importBackup(json: string, mode: "replace" | "merge" = "replace"): Promise<RestoreResult> {
+  let parsed: { app?: unknown; data?: unknown };
+  try {
+    parsed = JSON.parse(json.trim().replace(/^\uFEFF/, ""));
+  } catch {
+    throw new Error("El texto no es un JSON válido (¿se ha copiado entero?).");
   }
-  return n;
+  if (parsed?.app !== "NEXO" || !parsed.data || typeof parsed.data !== "object") throw new Error("No es una copia de NEXO.");
+  const data = parsed.data as Record<string, unknown>;
+  let restored = 0;
+  let replaced = 0;
+  const db = getDb();
+  const tables = TABLES.filter((t) => !t.serverOnly && t.name !== "raw_files" && Array.isArray(data[t.name]));
+  if (!tables.length) throw new Error("La copia no contiene datos.");
+  await db.transaction("rw", [...tables.map((t) => db.table(t.name)), db.outbox], async () => {
+    for (const t of tables) {
+      const valid = (data[t.name] as unknown[]).filter(
+        (r): r is Record<string, unknown> & { id: string } => !!r && typeof r === "object" && typeof (r as { id?: unknown }).id === "string",
+      );
+      const ids = new Set(valid.map((r) => r.id));
+      const now = nowIso();
+      const recs = valid.map((r) => ({ ...r, updatedAt: now }));
+      if (mode === "replace") {
+        const existing = (await db.table(t.name).toArray()) as { id: string; deletedAt?: string | null }[];
+        const stale = existing.filter((r) => !ids.has(r.id));
+        if (t.sync) {
+          const toDelete = stale.filter((r) => !r.deletedAt).map((r) => ({ ...r, deletedAt: now, updatedAt: now }));
+          await db.table(t.name).bulkPut(toDelete);
+          if (toDelete.length) await db.outbox.bulkAdd(toDelete.map((r) => ({ table: t.name, id: r.id, at: now })));
+          replaced += toDelete.length;
+        } else {
+          await db.table(t.name).bulkDelete(stale.map((r) => r.id));
+        }
+      }
+      await db.table(t.name).bulkPut(recs);
+      if (t.sync && recs.length) await db.outbox.bulkAdd(recs.map((r) => ({ table: t.name, id: r.id, at: now })));
+      restored += recs.length;
+    }
+  });
+  await audit("restore_backup", { restored, replaced, mode });
+  return { restored, replaced };
 }
 
 /** Borra TODOS los datos: remoto (si hay sesión) y local. Irreversible. */

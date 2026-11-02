@@ -24,12 +24,12 @@ export function ensureInitialized(): Promise<void> {
 }
 
 async function doInit() {
-  if (!(await tbl("profiles").get("me"))) await put("profiles", DEFAULT_PROFILE);
-  if (!(await tbl("goals").get("me"))) await put("goals", DEFAULT_GOALS);
-  if (!(await tbl("preferences").get("me"))) await put("preferences", DEFAULT_PREFERENCES);
-  if (!(await tbl("diabetes_settings").get("me"))) await put("diabetes_settings", DEFAULT_DIABETES);
-  for (const c of CONSENT_KINDS) if (!(await tbl("consents").get(c.kind))) await put("consents", defaultConsent(c.kind));
-  for (const t of SEED_TEMPLATES) if (!(await tbl("workout_templates").get(t.id))) await put("workout_templates", t);
+  if (!(await tbl("profiles").get("me"))) await put("profiles", DEFAULT_PROFILE, { seed: true });
+  if (!(await tbl("goals").get("me"))) await put("goals", DEFAULT_GOALS, { seed: true });
+  if (!(await tbl("preferences").get("me"))) await put("preferences", DEFAULT_PREFERENCES, { seed: true });
+  if (!(await tbl("diabetes_settings").get("me"))) await put("diabetes_settings", DEFAULT_DIABETES, { seed: true });
+  for (const c of CONSENT_KINDS) if (!(await tbl("consents").get(c.kind))) await put("consents", defaultConsent(c.kind), { seed: true });
+  for (const t of SEED_TEMPLATES) if (!(await tbl("workout_templates").get(t.id))) await put("workout_templates", t, { seed: true });
   if (!(await getMeta("legacyMigrated", false))) {
     await migrateLegacyFromLocalStorage();
     await setMeta("legacyMigrated", true);

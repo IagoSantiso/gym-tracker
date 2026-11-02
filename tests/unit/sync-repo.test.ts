@@ -23,6 +23,8 @@ function memoryRemote(uid = "user-a") {
       const t = tables.get(table) ?? new Map();
       for (const r of rows) {
         if (r.user_id !== uid) throw new Error("RLS");
+        const old = t.get(String(r.id));
+        if (old && String(r.updated_at) < String(old.updated_at)) continue; // trigger nexo_touch (LWW)
         t.set(String(r.id), { ...r, server_updated_at: new Date(++clock).toISOString() });
       }
       tables.set(table, t);
@@ -85,20 +87,54 @@ describe("motor de sincronización", () => {
     const remote = memoryRemote();
     const w = await put("weight_entries", { date: "2026-11-01", measuredAt: "2026-11-01T07:00:00.000Z", weightKg: 80, source: "manual" });
     await syncOnce(remote);
-    // otro dispositivo edita más tarde
+    // otro dispositivo edita después y crea un registro nuevo
     const row = remote.tables.get("weight_entries")!.get(w.id)!;
-    await remote.upsert("weight_entries", [{ ...row, weight_kg: 79.5, updated_at: "2030-01-01T00:00:00.000Z" }]);
-    // y crea un registro nuevo
-    await remote.upsert("weight_entries", [{ ...row, id: "remote-1", weight_kg: 79, updated_at: "2030-01-02T00:00:00.000Z" }]);
+    const later = new Date(Date.parse(String(row.updated_at)) + 60_000).toISOString();
+    await remote.upsert("weight_entries", [{ ...row, weight_kg: 79.5, updated_at: later }]);
+    await remote.upsert("weight_entries", [{ ...row, id: "remote-1", weight_kg: 79, updated_at: later }]);
     const r = await syncOnce(remote);
     expect(r.pulled).toBe(2);
     expect((await tbl("weight_entries").get(w.id))!.weightKg).toBe(79.5);
     expect(await tbl("weight_entries").get("remote-1")).toBeTruthy();
-    // un cambio remoto más antiguo no pisa uno local más nuevo
+    // una edición local posterior sigue ganando aunque el reloj local vaya atrasado
     await patch("weight_entries", w.id, { weightKg: 78 });
-    await remote.upsert("weight_entries", [{ ...row, weight_kg: 90, updated_at: "2020-01-01T00:00:00.000Z" }]);
+    expect(Date.parse((await tbl("weight_entries").get(w.id))!.updatedAt) > Date.parse(later)).toBe(true);
     await syncOnce(remote);
-    expect((await tbl("weight_entries").get(w.id))!.weightKg).toBe(78);
+    expect(remote.tables.get("weight_entries")!.get(w.id)!.weight_kg).toBe(78);
+  });
+  it("un cambio pendiente más antiguo no pisa en la nube uno más nuevo de otro dispositivo", async () => {
+    const remote = memoryRemote();
+    const w = await put("weight_entries", { date: "2026-11-01", measuredAt: "2026-11-01T07:00:00.000Z", weightKg: 80, source: "manual" });
+    await syncOnce(remote);
+    await patch("weight_entries", w.id, { weightKg: 81 }); // pendiente local
+    const row = remote.tables.get("weight_entries")!.get(w.id)!;
+    const future = new Date(Date.now() + 3_600_000).toISOString(); // el otro dispositivo editó después
+    await remote.upsert("weight_entries", [{ ...row, weight_kg: 77, updated_at: future }]);
+    await syncOnce(remote);
+    expect((await tbl("weight_entries").get(w.id))!.weightKg).toBe(77);
+    expect(remote.tables.get("weight_entries")!.get(w.id)!.weight_kg).toBe(77);
+    expect(await getDb().outbox.count()).toBe(0);
+  });
+  it("un dispositivo nuevo adopta los datos de la nube sin pisarlos ni duplicar", async () => {
+    const remote = memoryRemote();
+    // Dispositivo A (móvil): perfil configurado y menú
+    await ensureInitialized();
+    await patch("profiles", "me", { displayName: "Móvil", onboardingCompletedAt: "2026-11-01T08:00:00.000Z", draft: false });
+    await put("meal_plans", { id: "plan-movil", weekStart: "2026-10-27", generatedAt: "2026-10-27T08:00:00.000Z", settings: {}, generatorVersion: "t" });
+    const a = await syncOnce(remote);
+    expect(a.first).toBe("uploaded");
+    expect(remote.tables.get("profiles")!.get("me")!.display_name).toBe("Móvil");
+    // Dispositivo B (PC): base nueva con valores por defecto y un menú propio generado
+    setDbForTests(new NexoDB(`test-${++n}`));
+    resetInitForTests();
+    await ensureInitialized();
+    await put("meal_plans", { id: "plan-pc", weekStart: "2026-10-27", generatedAt: "2026-10-27T08:00:00.000Z", settings: {}, generatorVersion: "t" });
+    const b = await syncOnce(remote);
+    expect(b.first).toBe("adopted");
+    expect((await tbl("profiles").get("me"))!.displayName).toBe("Móvil");
+    expect((await all("meal_plans")).map((p) => p.id)).toEqual(["plan-movil"]);
+    expect(remote.tables.get("meal_plans")!.has("plan-pc")).toBe(false);
+    expect(remote.tables.get("profiles")!.get("me")!.display_name).toBe("Móvil");
   });
   it("propaga borrados como borrado lógico y permite borrar todo en remoto", async () => {
     const remote = memoryRemote();
@@ -113,6 +149,30 @@ describe("motor de sincronización", () => {
   it("se niega a mezclar datos de otra cuenta en el mismo dispositivo", async () => {
     await syncOnce(memoryRemote("user-a"));
     await expect(syncOnce(memoryRemote("user-b"))).rejects.toThrow(/otra cuenta/);
+  });
+});
+
+describe("restaurar copia", () => {
+  it("sustituye los datos del dispositivo y propaga como borrado lo que no estaba en la copia", async () => {
+    const { importBackup, exportAll } = await import("@/lib/services/data");
+    await ensureInitialized();
+    await patch("profiles", "me", { displayName: "Móvil" });
+    await put("meal_plans", { id: "plan-movil", weekStart: "2026-10-27", generatedAt: "2026-10-27T08:00:00.000Z", settings: {}, generatorVersion: "t" });
+    const text = await (await exportAll()).text();
+    // otro dispositivo
+    setDbForTests(new NexoDB(`test-${++n}`));
+    resetInitForTests();
+    await ensureInitialized();
+    await put("meal_plans", { id: "plan-pc", weekStart: "2026-10-27", generatedAt: "2026-10-27T08:00:00.000Z", settings: {}, generatorVersion: "t" });
+    await expect(importBackup('{"gymLogs":[]}')).rejects.toThrow(/NEXO/);
+    await expect(importBackup("{roto")).rejects.toThrow(/JSON/);
+    const r = await importBackup("\n" + text + "\n");
+    expect(r.restored).toBeGreaterThan(0);
+    expect((await tbl("profiles").get("me"))!.displayName).toBe("Móvil");
+    expect((await all("meal_plans")).map((p) => p.id)).toEqual(["plan-movil"]);
+    expect((await tbl("meal_plans").get("plan-pc"))!.deletedAt).toBeTruthy();
+    const pending = await getDb().outbox.where("table").equals("meal_plans").toArray();
+    expect([...new Set(pending.map((e) => e.id))].sort()).toEqual(["plan-movil", "plan-pc"]);
   });
 });
 
