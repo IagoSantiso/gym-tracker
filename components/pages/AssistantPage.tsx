@@ -1,14 +1,16 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Card, Empty, Icon, Notice, PageHead, useToast } from "@/components/ui";
+import { Card, Empty, Icon, Notice, PageHead, Toggle, useToast } from "@/components/ui";
+import { getSyncState, subscribeSync, syncNow, type SyncState } from "@/lib/sync/manager";
 import { ProposalCard } from "@/components/plan/ProposalCard";
 import { useLive, useTable } from "@/lib/db/hooks";
 import { tbl } from "@/lib/db/db";
-import { all, put, remove } from "@/lib/db/repo";
+import { all, nowIso, put, remove } from "@/lib/db/repo";
 import { CONSENT_KINDS } from "@/lib/db/defaults";
 import { aiStatus, CONTEXT_RE, runConversation, userItem } from "@/lib/ai/client";
 import type { ChatItem } from "@/lib/ai/tools";
+import type { ConsentKind } from "@/lib/db/types";
 import { asksForDosing } from "@/lib/domain/safety/guardrails";
 
 const SUGGESTIONS = [
@@ -29,6 +31,7 @@ const TOOL_LABEL: Record<string, string> = {
   get_nutrition_summary: "nutrición", get_cgm_period_summary: "glucosa (agregada)", get_recovery_summary: "recuperación",
   propose_schedule_changes: "propuesta de plan", draft_training_plan: "borrador de rutina", draft_meal_plan: "propuesta de menú",
   draft_recipe: "receta propuesta", draft_weekly_summary: "resumen semanal", save_user_note: "nota",
+  get_day_balance: "balance del día", log_meal_estimate: "registro de comida", propose_meal_variant: "variante de comida",
 };
 
 export function AssistantPage() {
@@ -46,6 +49,10 @@ export function AssistantPage() {
   const pending = useLive(async () => (await all("proposals")).filter((p) => p.status === "pending" && p.origin === "ai").sort((a, b) => b.createdAt.localeCompare(a.createdAt)), []) ?? [];
   const usage = useLive(async () => (await all("ai_usage")).filter((u) => u.ts.slice(0, 7) === new Date().toISOString().slice(0, 7)), []) ?? [];
   useEffect(() => { void aiStatus().then(setStatus); }, []);
+  const [syncS, setSyncS] = useState<SyncState>(getSyncState());
+  useEffect(() => { const un = subscribeSync(setSyncS); void syncNow(); return () => { un(); }; }, []);
+  const signedIn = !!syncS.email;
+  const autoSent = useRef(false);
   useEffect(() => {
     const q = new URLSearchParams(location.search).get("q");
     if (q) setText(q);
@@ -54,6 +61,7 @@ export function AssistantPage() {
 
   const send = async (msg: string) => {
     if (!msg.trim() || busy) return;
+    if (!ready) { toast("Completa los pasos de arriba para activar el asistente", "info"); return; }
     setError(null);
     setBusy(true);
     const id = convId ?? crypto.randomUUID();
@@ -71,15 +79,44 @@ export function AssistantPage() {
     }
   };
 
-  const ready = aiOn && status?.configured;
+  const loginOk = !status?.needsLogin || signedIn;
+  const ready = !!(aiOn && status?.configured && loginOk);
+  // Llegada desde «Ajusta mi día»: enviar automáticamente cuando todo esté listo
+  useEffect(() => {
+    if (!ready || autoSent.current) return;
+    const p = new URLSearchParams(location.search);
+    const q = p.get("q");
+    if (q && p.get("send") === "1") {
+      autoSent.current = true;
+      history.replaceState(history.state, "", "/asistente");
+      void send(q);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
   return (
     <>
       <PageHead eyebrow="Asistente" title="Pregunta sobre tus datos" actions={items.length ? <button className="btn ghost" onClick={() => { setItems([]); setConvId(null); setError(null); }}><Icon name="plus" />Nueva</button> : undefined}>
         Responde con tus datos reales mediante herramientas de solo lectura y crea propuestas que tú apruebas. Nunca da dosis de insulina ni indicaciones clínicas.
       </PageHead>
-      {!aiOn && (
-        <Card title="El asistente está desactivado" sub="Es opcional: todo lo demás funciona sin IA. Al activarlo eliges qué categorías de datos puede consultar.">
-          <Link className="btn primary" href="/ajustes?tab=privacidad"><Icon name="chat" />Activar y elegir categorías</Link>
+      {(!aiOn || !loginOk) && status !== null && (
+        <Card title="Activa el asistente (1 minuto)" sub="Es opcional: todo lo demás funciona sin IA.">
+          <ol className="steps small">
+            <li className={signedIn || !status?.needsLogin ? "done" : ""}>
+              {signedIn || !status?.needsLogin ? <>Sesión iniciada{syncS.email ? ` (${syncS.email})` : ""}.</> : <>Inicia sesión con tu email: el asistente solo responde a tu cuenta. <Link className="btn sm primary" style={{ marginLeft: 6 }} href="/ajustes?tab=sync">Iniciar sesión</Link></>}
+            </li>
+            <li className={aiOn ? "done" : ""}>Elige qué datos puede consultar (puedes cambiarlo cuando quieras):</li>
+          </ol>
+          <div className="stack" style={{ marginTop: 8 }}>
+            {CONSENT_KINDS.filter((k) => k.kind.startsWith("ai_")).map((k) => (
+              <Toggle key={k.kind} checked={!!consents.find((c) => c.kind === k.kind)?.granted} label={k.kind === "ai_assistant" ? "Usar el asistente" : k.label.replace("IA: ", "")} hint={k.detail}
+                onChange={async (v) => {
+                  const kinds: ConsentKind[] = v && k.kind !== "ai_assistant" ? [k.kind, "ai_assistant"] : !v && k.kind === "ai_assistant" ? CONSENT_KINDS.filter((x) => x.kind.startsWith("ai_")).map((x) => x.kind) : [k.kind];
+                  for (const kind of kinds) await put("consents", { id: kind, kind, granted: v, grantedAt: v ? nowIso() : null, revokedAt: v ? null : nowIso(), version: 1 });
+                  toast(v ? `${k.label.replace("IA: ", "")}: activado` : `${k.label.replace("IA: ", "")}: desactivado`, v ? "ok" : "info");
+                }} />
+            ))}
+          </div>
+          {text && <p className="small muted" style={{ marginBottom: 0 }}>Tu mensaje está preparado abajo y se enviará al completar estos pasos.</p>}
         </Card>
       )}
       {aiOn && status && !status.configured && <Notice kind="warn">El servidor no tiene configurada una clave de IA (<code>ANTHROPIC_API_KEY</code> u <code>OPENAI_API_KEY</code>). La app funciona igualmente sin asistente.</Notice>}
@@ -104,7 +141,7 @@ export function AssistantPage() {
       )}
       <form className="row" style={{ position: "sticky", bottom: "calc(var(--nav-h) + 12px)", marginTop: 16, background: "var(--bg)", padding: "8px 0", flexWrap: "nowrap" }}
         onSubmit={(e) => { e.preventDefault(); if (asksForDosing(text)) toast("Recuerda: el asistente no puede indicar dosis ni correcciones."); void send(text); }}>
-        <textarea className="input" rows={2} value={text} disabled={!ready || busy} onChange={(e) => setText(e.target.value)} placeholder={ready ? "Escribe tu pregunta…" : "Asistente no disponible"} aria-label="Mensaje para el asistente"
+        <textarea className="input" rows={2} value={text} disabled={busy} onChange={(e) => setText(e.target.value)} placeholder={ready ? "Escribe tu pregunta… (p. ej. «He desayunado… ajusta lo que queda del día»)" : "Completa los pasos de arriba para usar el asistente"} aria-label="Mensaje para el asistente"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); } }} style={{ resize: "none" }} />
         <button className="btn primary" disabled={!ready || busy || !text.trim()} type="submit" aria-label="Enviar" aria-busy={busy}>{busy ? <span className="spinner" aria-hidden /> : <Icon name="right" />}</button>
       </form>

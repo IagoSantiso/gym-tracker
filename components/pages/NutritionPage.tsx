@@ -162,6 +162,7 @@ function TodayTab({ cat }: { cat: Catalog }) {
   const sorted = (meals ?? []).sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
   return (
     <div className="stack">
+      <AdjustDayCard />
       <DayTotals logs={logs.map((l) => l.totals)} targets={targets} />
       <Card title="Comidas previstas hoy">
         {meals && !meals.length ? <Empty title="Sin menú esta semana" action={<button className="btn primary" onClick={() => void generateWeekMenu(ws, { kcalTarget: targets?.kcal ?? null, keepLocked: true })}>Generar menú</button>} /> :
@@ -187,6 +188,30 @@ function TodayTab({ cat }: { cat: Catalog }) {
       </Card>
       <SwapModal entry={swap} cat={cat} onClose={() => setSwap(null)} />
     </div>
+  );
+}
+
+const ADJUST_EXAMPLES = [
+  "He desayunado tortilla francesa de 2 huevos y dos tostadas con café con leche. Para comer tengo arroz y puedo añadir otra cosa: ajusta lo que queda del día.",
+  "Me han ofrecido dos rosquillas en el trabajo: ¿cuánto suponen y cómo encajo la cena?",
+  "No tengo los ingredientes de la cena; tengo pollo, patata y calabacín.",
+];
+
+/** Lenguaje natural → asistente: registrar lo comido y reajustar lo que queda (siempre como propuestas). */
+export function AdjustDayCard() {
+  const [text, setText] = useState("");
+  const go = (q: string) => { location.assign(`/asistente?send=1&q=${encodeURIComponent(q)}`); };
+  return (
+    <Card title="Ajusta mi día" sub="Cuéntale al asistente qué has comido o qué tienes en casa. Registra lo comido y te propone cómo encajar el resto del día; tú apruebas cada cambio.">
+      <textarea className="input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Ej.: He desayunado tortilla francesa y dos tostadas con café con leche; para comer tengo arroz…" aria-label="Qué has comido o qué tienes" />
+      <div className="row" style={{ marginTop: 8 }}>
+        <button className="btn primary" disabled={!text.trim()} onClick={() => go(text.trim())}><Icon name="chat" />Ajustar con el asistente</button>
+      </div>
+      <div className="pill-row" style={{ marginTop: 8 }}>
+        {ADJUST_EXAMPLES.map((e) => <button key={e} className="chip" onClick={() => setText(e)}>{e.length > 48 ? `${e.slice(0, 46)}…` : e}</button>)}
+      </div>
+      <p className="xs dim" style={{ marginBottom: 0 }}>Sin compensar con ejercicio ni saltarse comidas. Nunca da indicaciones de insulina.</p>
+    </Card>
   );
 }
 

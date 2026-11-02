@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ActionButton, Card, Empty, Icon, Kpi, Notice, SourceBadge, useToast } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
-import { BalanceCard, Portions } from "@/components/pages/NutritionPage";
+import { AdjustDayCard, BalanceCard, Portions } from "@/components/pages/NutritionPage";
 import { ProposalCard } from "@/components/plan/ProposalCard";
 import { useDiabetes, useLive, useProfile } from "@/lib/db/hooks";
 import { tbl } from "@/lib/db/db";
@@ -156,6 +156,7 @@ export function TodayPage() {
           <p className="xs dim" style={{ marginBottom: 0 }}>Hidratos calculados con datos de referencia (estimación). No es una indicación de dosis.</p>
         </Card>
 
+        <AdjustDayCard />
         {cat && <BalanceCard cat={cat} compact />}
 
         <Card title="Preparar o comprar">

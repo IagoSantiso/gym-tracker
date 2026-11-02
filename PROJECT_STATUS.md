@@ -29,6 +29,8 @@ Las fases 0–7 del prompt maestro (adaptado a Claude Code, ver `docs/PROMPT_MAE
 - Sincronización rehecha: estado claro (icono + texto + «última: hace X»), pasos numerados, código del email, recuperación si el enlace va a `localhost`, reenviar con cuenta atrás.
 - Plan: intensidad como barra de color + texto, acciones sin apretar el texto en móvil; cabeceras con la descripción antes de los botones; pestañas con indicador de desplazamiento; balance del día compacto cuando no hay datos; asistente con botón para activarlo, indicador «pensando» y sugerencias de comidas.
 
+- «Ajusta mi día» (Hoy y Nutrición → Hoy): texto libre → asistente (registra lo comido y propone el resto del día). Activación del asistente guiada en su pantalla (sesión + permisos por categoría).
+
 ## Criterios de aceptación (sección 18)
 | # | Criterio | Estado | Cómo se verifica |
 | --- | --- | --- | --- |

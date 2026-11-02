@@ -166,7 +166,14 @@ try {
 
   /* Asistente sin consentimiento */
   await page.goto(BASE + "/asistente", { waitUntil: "networkidle" });
-  ok(await page.getByText("El asistente está desactivado").isVisible(), "IA desactivada por defecto (opt-in)");
+  await page.getByText("Activa el asistente").waitFor();
+  ok(!(await page.getByRole("checkbox", { name: /Usar el asistente/ }).isChecked()), "IA desactivada por defecto (opt-in)");
+  await page.goto(BASE + "/nutricion?tab=hoy", { waitUntil: "networkidle" });
+  await page.getByLabel("Qué has comido o qué tienes").fill("He desayunado tortilla francesa y dos tostadas");
+  await page.getByRole("button", { name: "Ajustar con el asistente" }).click();
+  await page.waitForURL(/\/asistente/);
+  await page.waitForTimeout(800);
+  ok((await page.getByLabel("Mensaje para el asistente").inputValue()).includes("tortilla francesa"), "«Ajusta mi día» lleva el texto al asistente");
 
   /* Ajustes: tema claro y exportación */
   await page.goto(BASE + "/ajustes?tab=preferencias", { waitUntil: "networkidle" });
