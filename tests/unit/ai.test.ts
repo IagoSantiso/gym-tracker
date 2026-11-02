@@ -209,3 +209,18 @@ describe("herramientas en cliente", () => {
     expect((await all("recipe_ingredients")).filter((i) => i.recipeId === e.recipeId)).toHaveLength(2);
   });
 });
+
+describe("acceso al asistente con código personal", () => {
+  it("acepta el código correcto, rechaza el incorrecto y exige longitud mínima", async () => {
+    const { authorize, accessCodeConfigured } = await import("@/lib/server/auth");
+    const prev = process.env.AI_ACCESS_CODE;
+    process.env.AI_ACCESS_CODE = "corto";
+    expect(accessCodeConfigured()).toBe(false);
+    process.env.AI_ACCESS_CODE = "codigo-largo-de-prueba-123";
+    const mk = (code?: string) => new Request("http://x/api/ai/chat", { method: "POST", headers: code ? { "x-nexo-access": code } : {} });
+    expect(await authorize(mk("codigo-largo-de-prueba-123"))).toMatchObject({ key: "code:owner" });
+    expect(await authorize(mk("otro-codigo-cualquiera-xx"))).toMatchObject({ status: 401 });
+    expect(await authorize(mk())).toMatchObject({ status: 401 });
+    process.env.AI_ACCESS_CODE = prev;
+  });
+});

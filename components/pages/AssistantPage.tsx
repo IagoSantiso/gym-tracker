@@ -1,14 +1,14 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Card, Empty, Icon, Notice, PageHead, Toggle, useToast } from "@/components/ui";
+import { ActionButton, Card, Empty, Icon, Notice, PageHead, Toggle, useToast } from "@/components/ui";
 import { getSyncState, subscribeSync, syncNow, type SyncState } from "@/lib/sync/manager";
 import { ProposalCard } from "@/components/plan/ProposalCard";
 import { useLive, useTable } from "@/lib/db/hooks";
 import { tbl } from "@/lib/db/db";
 import { all, nowIso, put, remove } from "@/lib/db/repo";
 import { CONSENT_KINDS } from "@/lib/db/defaults";
-import { aiStatus, CONTEXT_RE, runConversation, userItem } from "@/lib/ai/client";
+import { aiStatus, CONTEXT_RE, getAccessCode, runConversation, setAccessCode, userItem } from "@/lib/ai/client";
 import type { ChatItem } from "@/lib/ai/tools";
 import type { ConsentKind } from "@/lib/db/types";
 import { asksForDosing } from "@/lib/domain/safety/guardrails";
@@ -57,7 +57,7 @@ export function AssistantPage() {
     const q = new URLSearchParams(location.search).get("q");
     if (q) setText(q);
   }, []);
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }), [items.length]);
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [items.length]);
 
   const send = async (msg: string) => {
     if (!msg.trim() || busy) return;
@@ -79,7 +79,10 @@ export function AssistantPage() {
     }
   };
 
-  const loginOk = !status?.needsLogin || signedIn;
+  const [hasCode, setHasCode] = useState(false);
+  const [codeInput, setCodeInput] = useState("");
+  useEffect(() => { void getAccessCode().then((c) => setHasCode(!!c)); }, []);
+  const loginOk = !status?.needsLogin || signedIn || (hasCode && !!status?.accessCode);
   const ready = !!(aiOn && status?.configured && loginOk);
   // Llegada desde «Ajusta mi día»: enviar automáticamente cuando todo esté listo
   useEffect(() => {
@@ -101,8 +104,28 @@ export function AssistantPage() {
       {(!aiOn || !loginOk) && status !== null && (
         <Card title="Activa el asistente (1 minuto)" sub="Es opcional: todo lo demás funciona sin IA.">
           <ol className="steps small">
-            <li className={signedIn || !status?.needsLogin ? "done" : ""}>
-              {signedIn || !status?.needsLogin ? <>Sesión iniciada{syncS.email ? ` (${syncS.email})` : ""}.</> : <>Inicia sesión con tu email: el asistente solo responde a tu cuenta. <Link className="btn sm primary" style={{ marginLeft: 6 }} href="/ajustes?tab=sync">Iniciar sesión</Link></>}
+            <li className={loginOk ? "done" : ""}>
+              {loginOk ? <>{signedIn ? `Sesión iniciada (${syncS.email}).` : hasCode ? "Código de acceso guardado en este dispositivo." : "Acceso listo."}</> : (
+                <>
+                  Identifícate: la clave de IA es tuya y la paga tu cuenta, así que el servidor solo responde a ti.
+                  {status?.accessCode ? (
+                    <div className="stack" style={{ marginTop: 8 }}>
+                      <span className="small">Escribe tu <b>código de acceso</b> (el que pusiste en Vercel como <code>AI_ACCESS_CODE</code>):</span>
+                      <div className="row" style={{ flexWrap: "nowrap" }}>
+                        <input className="input" type="password" autoComplete="current-password" value={codeInput} onChange={(e) => setCodeInput(e.target.value)} aria-label="Código de acceso del asistente" />
+                        <ActionButton className="btn primary" disabled={codeInput.trim().length < 12} onRun={async () => {
+                          const r = await fetch("/api/ai/chat", { method: "POST", headers: { "Content-Type": "application/json", "X-Nexo-Access": codeInput.trim() }, body: "{}" });
+                          if (r.status === 401 || r.status === 403) throw new Error("Código incorrecto");
+                          await setAccessCode(codeInput.trim());
+                          setHasCode(true);
+                          setCodeInput("");
+                        }} success="Código guardado en este dispositivo">Guardar</ActionButton>
+                      </div>
+                      <span className="xs dim">o <Link href="/ajustes?tab=sync">inicia sesión con tu email</Link> (también sirve para sincronizar).</span>
+                    </div>
+                  ) : <> <Link className="btn sm primary" style={{ marginLeft: 6 }} href="/ajustes?tab=sync">Iniciar sesión</Link></>}
+                </>
+              )}
             </li>
             <li className={aiOn ? "done" : ""}>Elige qué datos puede consultar (puedes cambiarlo cuando quieras):</li>
           </ol>
@@ -122,7 +145,7 @@ export function AssistantPage() {
       {aiOn && status && !status.configured && <Notice kind="warn">El servidor no tiene configurada una clave de IA (<code>ANTHROPIC_API_KEY</code> u <code>OPENAI_API_KEY</code>). La app funciona igualmente sin asistente.</Notice>}
       {aiOn && status === null && <Notice kind="warn">Sin conexión con el servidor: el asistente necesita red.</Notice>}
       {aiOn && (
-        <p className="xs dim">Proveedor: {status?.provider === "openai" ? "OpenAI" : "Claude (Anthropic)"}{status?.model ? ` · ${status.model}` : ""} · Categorías permitidas: {CONSENT_KINDS.filter((k) => k.kind.startsWith("ai_") && consents.find((c) => c.kind === k.kind)?.granted).map((k) => k.label.replace("IA: ", "")).join(", ") || "solo perfil"} · Este mes: {usage.reduce((a, u) => a + u.inputTokens + u.outputTokens, 0).toLocaleString("es-ES")} tokens{usage.some((u) => u.costUsd != null) ? ` (~${usage.reduce((a, u) => a + (u.costUsd ?? 0), 0).toFixed(2)} USD)` : ""}</p>
+        <p className="xs dim">Proveedor: {status?.provider === "openai" ? "OpenAI" : "Claude (Anthropic)"}{status?.model ? ` · ${status.model}` : ""} · Categorías permitidas: {CONSENT_KINDS.filter((k) => k.kind.startsWith("ai_") && consents.find((c) => c.kind === k.kind)?.granted).map((k) => k.label.replace("IA: ", "")).join(", ") || "solo perfil"} {hasCode && <> · <button className="link-btn" onClick={async () => { await setAccessCode(null); setHasCode(false); toast("Código olvidado en este dispositivo", "info"); }}>olvidar código de acceso</button></>} · Este mes: {usage.reduce((a, u) => a + u.inputTokens + u.outputTokens, 0).toLocaleString("es-ES")} tokens{usage.some((u) => u.costUsd != null) ? ` (~${usage.reduce((a, u) => a + (u.costUsd ?? 0), 0).toFixed(2)} USD)` : ""}</p>
       )}
       <div className="stack" style={{ marginTop: 12 }}>
         {!items.length && ready && (

@@ -441,3 +441,4 @@ ul.small li::marker,ul[style*="padding-left"] li::marker,.card ul:not([class]) l
 .update-banner>svg{width:18px;height:18px;color:var(--accent);flex:0 0 auto}
 .update-banner span{flex:1}
 .update-banner .icon-btn{width:34px;height:34px}
+.link-btn{background:none;border:0;padding:0;color:var(--accent);text-decoration:underline;font:inherit;cursor:pointer}

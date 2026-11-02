@@ -1,6 +1,6 @@
 "use client";
 /** Bucle de conversación: servidor (modelo + guardarraíles) ↔ cliente (herramientas sobre IndexedDB). */
-import { tbl } from "@/lib/db/db";
+import { getMeta, setMeta, tbl } from "@/lib/db/db";
 import { all, nowIso, put } from "@/lib/db/repo";
 import { localDate, WEEKDAYS_ES, weekdayOf } from "@/lib/domain/time";
 import { accessToken } from "@/lib/sync/supabase";
@@ -10,7 +10,11 @@ import type { ConsentKind } from "@/lib/db/types";
 
 export const CONTEXT_RE = /^\[Contexto de la app[^\]]*\]\n\n/;
 
-export async function aiStatus(): Promise<{ configured: boolean; provider: string; model: string | null; needsLogin: boolean } | null> {
+/** Código de acceso personal al asistente (solo en este dispositivo; no se sincroniza). */
+export const getAccessCode = () => getMeta<string | null>("aiAccessCode", null);
+export const setAccessCode = (code: string | null) => setMeta("aiAccessCode", code);
+
+export async function aiStatus(): Promise<{ configured: boolean; provider: string; model: string | null; needsLogin: boolean; accessCode?: boolean } | null> {
   try {
     const r = await fetch("/api/ai/status", { cache: "no-store" });
     return r.ok ? r.json() : null;
@@ -42,11 +46,12 @@ export async function runConversation(items: ChatItem[], onUpdate: (u: TurnUpdat
   let cur = [...items];
   for (let step = 0; step < 8; step++) {
     const token = await accessToken();
+    const code = token ? null : await getAccessCode();
     let res: Response;
     try {
       res = await fetch("/api/ai/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : code ? { "X-Nexo-Access": code } : {}) },
         body: JSON.stringify({ items: cur, context: await context() } satisfies ChatRequest),
       });
     } catch {
