@@ -31,8 +31,12 @@ const security = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
 ];
 
+/** Identificador de versión: commit en Vercel o marca de tiempo local. */
+const BUILD_ID = (process.env.VERCEL_GIT_COMMIT_SHA ?? "").slice(0, 10) || `local-${Date.now().toString(36)}`;
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  env: { NEXT_PUBLIC_BUILD_ID: BUILD_ID },
   poweredByHeader: false,
   async headers() {
     return [

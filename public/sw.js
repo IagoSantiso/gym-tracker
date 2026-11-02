@@ -4,8 +4,12 @@
  *  - /api/* y peticiones RSC (?_rsc): solo red; si falla, Next hace navegación completa y se sirve el HTML cacheado.
  *  - Instalación: precarga todas las rutas de precache.json, los chunks que referencia cada HTML y las fotos.
  */
-const VERSION = "v2";
+// La versión llega en la URL de registro (/sw.js?v=<commit>): cada despliegue instala un SW nuevo.
+const VERSION = new URL(self.location.href).searchParams.get("v") || "v2";
 const CACHE = `nexo-${VERSION}`;
+// Fotos e iconos no cambian entre versiones: caché estable para no descargarlos en cada despliegue.
+const MEDIA = "nexo-media";
+const isMedia = (path) => path.startsWith("/exercises/") || path.startsWith("/icons/");
 const STATIC_PREFIXES = ["/_next/static/", "/exercises/", "/icons/"];
 const STATIC_EXACT = ["/manifest.webmanifest", "/pdf.worker.min.mjs"];
 
@@ -50,7 +54,12 @@ self.addEventListener("install", (event) => {
         }),
       );
       const rest = (pre.urls || []).filter((u) => !routes.includes(u));
-      await Promise.all(rest.map((u) => cache.add(new Request(u, { cache: "reload" })).catch(() => {})));
+      const media = await caches.open(MEDIA);
+      await Promise.all(rest.map(async (u) => {
+        const target = isMedia(u) ? media : cache;
+        if (await target.match(u)) return;
+        await target.add(new Request(u, { cache: "reload" })).catch(() => {});
+      }));
       await self.skipWaiting();
     })(),
   );
@@ -60,7 +69,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
       const names = await caches.keys();
-      await Promise.all(names.filter((n) => (n.startsWith("gym-") || n.startsWith("nexo-")) && n !== CACHE).map((n) => caches.delete(n)));
+      await Promise.all(names.filter((n) => (n.startsWith("gym-") || n.startsWith("nexo-")) && n !== CACHE && n !== MEDIA).map((n) => caches.delete(n)));
       await self.clients.claim();
     })(),
   );
@@ -71,10 +80,14 @@ self.addEventListener("message", (event) => {
   if (!data || data.type !== "CACHE_URLS" || !Array.isArray(data.urls)) return;
   event.waitUntil(
     (async () => {
-      const cache = await caches.open(CACHE);
+      // Limpieza tardía: un SW anterior aún activo pudo recrear su caché durante la actualización.
+      const names = await caches.keys();
+      await Promise.all(names.filter((n) => n.startsWith("nexo-") && n !== CACHE && n !== MEDIA).map((n) => caches.delete(n)));
       for (const raw of data.urls) {
         const url = new URL(raw, self.location.origin);
-        if (!isStatic(url) || (await cache.match(url.pathname + url.search))) continue;
+        if (!isStatic(url)) continue;
+        const cache = await caches.open(isMedia(url.pathname) ? MEDIA : CACHE);
+        if (await cache.match(url.pathname + url.search)) continue;
         await cache.add(url.pathname + url.search).catch(() => {});
       }
     })(),
@@ -119,7 +132,7 @@ self.addEventListener("fetch", (event) => {
   if (isStatic(url)) {
     event.respondWith(
       (async () => {
-        const cache = await caches.open(CACHE);
+        const cache = await caches.open(isMedia(url.pathname) ? MEDIA : CACHE);
         const hit = await cache.match(req, { ignoreSearch: url.pathname.startsWith("/exercises/") });
         if (hit) return hit;
         const res = await fetch(req);

@@ -700,6 +700,7 @@ function DataTab() {
           setLegacy("");
         }}>Importar</button>
       </Card>
+      <p className="xs dim">Versión de la app: {process.env.NEXT_PUBLIC_BUILD_ID ?? "dev"}</p>
       <Card title="Borrar todos mis datos" sub="Elimina todo de este dispositivo y, si has iniciado sesión, también de la nube. No se puede deshacer.">
         <button className="btn danger" onClick={async () => {
           if (!confirmAction("¿Borrar TODOS tus datos de este dispositivo (y de la nube si hay sesión)? Exporta antes si quieres conservarlos.")) return;

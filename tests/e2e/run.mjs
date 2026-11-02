@@ -189,7 +189,8 @@ try {
   await page.evaluate(() => navigator.serviceWorker.ready);
   await page.reload({ waitUntil: "networkidle" });
   const cachedRoutes = await page.evaluate(async () => {
-    const keys = await (await caches.open("nexo-v2")).keys();
+    const name = (await caches.keys()).find((n) => n.startsWith("nexo-") && n !== "nexo-media");
+    const keys = await (await caches.open(name)).keys();
     return keys.map((k) => new URL(k.url).pathname);
   });
   ok(["/", "/plan", "/diabetes", "/nutricion", "/entrenamiento/sesion"].every((r) => cachedRoutes.includes(r)), "rutas precacheadas por el service worker");
