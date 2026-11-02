@@ -1,6 +1,7 @@
 "use client";
 /** Informe para la consulta: distingue DATOS, OBSERVACIONES y PREGUNTAS. Sin conclusiones médicas. Imprimible (PDF). */
 import Link from "next/link";
+import { PdfReportCard } from "@/components/diabetes/PdfReport";
 import { useMemo, useState } from "react";
 import { Card, Icon, Notice } from "@/components/ui";
 import { AgpChart, TirBar } from "@/components/charts/glucose";
@@ -14,12 +15,13 @@ import { formatGlucose } from "@/lib/domain/units";
 import { formatDateEs, localDate, minutesOfDay } from "@/lib/domain/time";
 import { SPORT_LABEL } from "@/lib/domain/training/endurance";
 import { weightTrend } from "@/lib/domain/nutrition/targets";
-import { readingsBetween } from "@/lib/services/cgm";
+import { agpPdfReports, readingsBetween } from "@/lib/services/cgm";
 import { download, toCsv } from "@/lib/services/data";
 
 export function ReportPage() {
   const p = useProfile();
   const d = useDiabetes();
+  const pdfReports = useLive(() => agpPdfReports(), []) ?? [];
   const [days, setDays] = useState(14);
   const [questions, setQuestions] = useState("");
   const ranges = { veryLow: d.veryLow, low: d.targetLow, high: d.targetHigh, veryHigh: d.veryHigh };
@@ -77,6 +79,7 @@ export function ReportPage() {
       <Notice kind="info">Este documento recoge datos importados/registrados y observaciones descriptivas. No contiene conclusiones médicas ni recomendaciones de tratamiento.</Notice>
 
       <h2 style={{ fontSize: 18, marginTop: 18 }}>1. Datos</h2>
+      {pdfReports[0] && <PdfReportCard report={pdfReports[0]} unit={d.unit} />}
       <Card title="Glucosa (MCG importado)" sub={`${d.cgmDevice ?? "Sensor"} · ${m.n} lecturas automáticas · cobertura ${pc(m.coveragePct)} · ${m.gaps.length} huecos > 45 min · rangos ${d.targetsSource === "care_team" ? "indicados por el equipo" : "por defecto (consenso)"}`}>
         {m.n ? (
           <>
@@ -93,7 +96,7 @@ export function ReportPage() {
               <tbody>{calc.blocks.map((b) => <tr key={b.id}><td>{b.label}</td><td>{b.mean != null ? g(b.mean) : "—"}</td><td>{pc(b.pctIn)}</td><td>{pc(b.pctBelow70)}</td><td>{pc(b.pctAbove180)}</td></tr>)}</tbody>
             </table>
           </>
-        ) : <p className="small muted">Sin datos de glucosa en el periodo.</p>}
+        ) : <p className="small muted">Sin lecturas individuales en este periodo. Los informes PDF, si existen, se muestran con su propio periodo.</p>}
       </Card>
       <Card title="Actividad">
         <p className="small" style={{ margin: 0 }}>

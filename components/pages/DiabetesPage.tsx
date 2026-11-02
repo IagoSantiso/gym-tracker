@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { PdfReports, PdfReportMetrics } from "@/components/diabetes/PdfReport";
 import { useMemo, useState } from "react";
 import { ActionButton, Card, Empty, Field, Icon, Kpi, Notice, PageHead, SourceBadge, Tabs, Toggle, confirmAction, useTabParam, useToast } from "@/components/ui";
 import { AgpChart, GlucoseDayChart, TirBar, type DayEvent } from "@/components/charts/glucose";
@@ -12,11 +13,11 @@ import { computeAgp } from "@/lib/domain/cgm/agp";
 import { DEFAULT_EPISODE_RULES, detectEpisodes } from "@/lib/domain/cgm/episodes";
 import { activityGlucose, mealGlucose, observations, summarizeGroups } from "@/lib/domain/cgm/context";
 import { MAX_CSV_BYTES, parseCgmCsv, sha256Hex, type ColumnMap, type DateOrder, type ParseResult } from "@/lib/domain/cgm/parse";
-import { isPdf, parseAgpText } from "@/lib/domain/cgm/agp-pdf";
+import { isPdf, parseAgpText, hasAgpMetrics, agpSummaryRecord } from "@/lib/domain/cgm/agp-pdf";
 import { formatGlucose } from "@/lib/domain/units";
 import { addDays, formatDateEs, localDate, minutesOfDay, startOfLocalDay } from "@/lib/domain/time";
 import { SPORT_LABEL, TYPE_LABEL } from "@/lib/domain/training/endurance";
-import { deleteImport, deleteRawFile, findImportByHash, readingsBetween, saveCgmImport } from "@/lib/services/cgm";
+import { deleteImport, deleteRawFile, findImportByHash, readingsBetween, saveCgmImport, saveAgpPdfImport, agpPdfReports } from "@/lib/services/cgm";
 import { MAX_PDF_BYTES, pdfText } from "@/lib/services/pdf";
 import type { CgmReading, GlucoseUnit } from "@/lib/db/types";
 
@@ -30,11 +31,13 @@ export function DiabetesPage() {
   const [tab, setTab] = useTabParam<Tab>("resumen", TABS);
   const d = useDiabetes();
   const p = useProfile();
+  const pdfReports = useLive(() => agpPdfReports(), []) ?? [];
   const [days, setDays] = useState(14);
+  const [referenceNow] = useState(() => Date.now());
   const [quick, setQuick] = useState<QuickKind>(null);
   const last = useLive(async () => (await tbl("cgm_readings").orderBy("ts").reverse().filter((x) => active(x) && x.kind === "historic").first()) ?? null, []);
   const ranges: Ranges = { veryLow: d.veryLow, low: d.targetLow, high: d.targetHigh, veryHigh: d.veryHigh };
-  const endMs = last ? Date.parse(last.ts) + 60000 : Date.now();
+  const endMs = last ? Date.parse(last.ts) + 60000 : referenceNow;
   const startMs = endMs - days * 864e5;
   const readings = useLive(() => readingsBetween(startMs - 864e5 * days, endMs), [startMs, endMs, days]);
   const ageH = last ? (Date.now() - Date.parse(last.ts)) / 36e5 : null;
@@ -45,19 +48,21 @@ export function DiabetesPage() {
         Análisis de datos importados para entender patrones y preparar tus consultas. No es un monitor en tiempo real ni sustituye al lector o la app oficial, y nunca sugiere dosis.
       </PageHead>
       <Notice kind={ageH != null && ageH < 24 ? "info" : "warn"} icon="clock">
-        {last ? <>Último dato importado: <b>{new Date(last.ts).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" })}</b> ({ageH! < 48 ? `hace ${Math.round(ageH!)} h` : `hace ${Math.round(ageH! / 24)} días`}). <b>No es tiempo real</b>: puede haber retrasos y huecos.</> : <>Aún no hay datos de glucosa. <Link href="/diabetes?tab=importar">Importa tu CSV de LibreView</Link>.</>}
+        {last ? <>Último dato importado: <b>{new Date(last.ts).toLocaleString("es-ES", { dateStyle: "medium", timeStyle: "short" })}</b> ({ageH! < 48 ? `hace ${Math.round(ageH!)} h` : `hace ${Math.round(ageH! / 24)} días`}). <b>No es tiempo real</b>: puede haber retrasos y huecos.</> : <>{pdfReports.length ? "Tienes informes PDF importados: consulta sus métricas y fechas en Resumen. No son datos en tiempo real." : <>Aún no hay datos de glucosa. <Link href="/diabetes?tab=importar">Importa tu PDF de LibreLink o CSV de LibreView</Link>.</>}</>}
       </Notice>
       <Tabs label="Diabetes" value={tab} onChange={setTab} tabs={[
         { id: "resumen", label: "Resumen" }, { id: "dia", label: "Día" }, { id: "agp", label: "AGP" }, { id: "ejercicio", label: "Actividad y comidas" },
         { id: "eventos", label: "Eventos" }, { id: "importar", label: "Importar" }, { id: "protocolo", label: "Mi protocolo" },
       ]} />
-      {["resumen", "agp", "ejercicio"].includes(tab) && (
+      {["resumen", "agp", "ejercicio"].includes(tab) && (last || pdfReports.length === 0) && (
         <div className="row" style={{ marginBottom: 10 }} role="group" aria-label="Periodo">
           {[7, 14, 30, 90].map((n) => <button key={n} className="chip" aria-pressed={days === n} onClick={() => setDays(n)}>{n} días</button>)}
         </div>
       )}
-      {tab === "resumen" && <Summary readings={readings} startMs={startMs} endMs={endMs} days={days} ranges={ranges} unit={d.unit} tz={p.timezone} />}
+      {tab === "resumen" && <PdfReports reports={pdfReports} unit={d.unit} />}
+      {tab === "resumen" && (last || pdfReports.length === 0) && <Summary readings={readings} startMs={startMs} endMs={endMs} days={days} ranges={ranges} unit={d.unit} tz={p.timezone} />}
       {tab === "dia" && <DayView ranges={ranges} unit={d.unit} tz={p.timezone} lastDate={last ? localDate(last.ts, p.timezone) : localDate()} />}
+      {["dia", "agp", "ejercicio"].includes(tab) && !last && pdfReports.length > 0 && <Notice kind="info">El PDF incluye resúmenes y gráficas, pero no las lecturas individuales necesarias para esta vista. Tus métricas están en <button className="link-btn" onClick={() => setTab("resumen")}>Resumen</button>; puedes recuperar el gráfico original descargando el PDF conservado.</Notice>}
       {tab === "agp" && <AgpView readings={readings} startMs={startMs} endMs={endMs} ranges={ranges} unit={d.unit} tz={p.timezone} />}
       {tab === "ejercicio" && <ContextView readings={readings} startMs={startMs} endMs={endMs} unit={d.unit} />}
       {tab === "eventos" && <EventsView unit={d.unit} onAdd={() => setQuick("glucose")} />}
@@ -267,64 +272,65 @@ function ImportView({ tz }: { tz: string }) {
   const [keepRaw, setKeepRaw] = useState(true);
   const [map, setMap] = useState<ColumnMap | null>(null);
   const [mapUnit, setMapUnit] = useState<GlucoseUnit>("mg/dL");
+  const [pdfFile, setPdfFile] = useState<{ name: string; size: number; hash: string; bytes: ArrayBuffer } | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [pdf, setPdf] = useState<ReturnType<typeof parseAgpText> | null>(null);
   const [busy, setBusy] = useState(false);
   const parsed = useMemo(() => (file ? parseCgmCsv(file.text, { timezone: zone, dateOrder: order || undefined, map: map ?? undefined, unit: map ? mapUnit : undefined }) : null), [file, zone, order, map, mapUnit]);
   const onFile = async (f?: File) => {
-    setPdf(null);
-    setFile(null);
-    setMap(null);
+    setPdf(null); setPdfFile(null); setFile(null); setMap(null); setFileError(null);
     if (!f) return;
-    const bytes = await f.arrayBuffer();
-    const head = new Uint8Array(bytes.slice(0, 5));
-    if (isPdf(head)) {
-      if (bytes.byteLength > MAX_PDF_BYTES) return toast("PDF demasiado grande (máx. 10 MB)");
-      try { setPdf(parseAgpText(await pdfText(bytes))); } catch { toast("No se pudo leer el PDF"); }
-      return;
-    }
-    if (bytes.byteLength > MAX_CSV_BYTES) return toast("CSV demasiado grande (máx. 20 MB)");
-    const text = new TextDecoder("utf-8").decode(bytes);
-    const hash = await sha256Hex(bytes);
-    if (await findImportByHash(hash)) toast("Este archivo ya se importó: solo se añadirán lecturas nuevas (si las hay).");
-    setFile({ name: f.name, size: f.size, bytes, text, hash });
+    if (f.size > MAX_CSV_BYTES) { setFileError("Archivo demasiado grande (PDF: 10 MB; CSV: 20 MB)."); return; }
+    setBusy(true);
+    try {
+      const bytes = await f.arrayBuffer();
+      const head = new Uint8Array(bytes.slice(0, 5));
+      if (isPdf(head)) {
+        if (f.size > MAX_PDF_BYTES) throw new Error("PDF demasiado grande (máximo 10 MB).");
+        const hash = await sha256Hex(bytes);
+        const summary = parseAgpText(await pdfText(bytes));
+        setPdf(summary); setPdfFile({ name: f.name, size: f.size, hash, bytes });
+        if (await findImportByHash(hash)) toast("Este PDF ya está importado; no se volverá a duplicar.");
+        return;
+      }
+      if (/\.pdf$/i.test(f.name) || f.type === "application/pdf") throw new Error("El archivo seleccionado no tiene un formato PDF válido.");
+      const text = new TextDecoder("utf-8").decode(bytes);
+      const hash = await sha256Hex(bytes);
+      if (await findImportByHash(hash)) toast("Este archivo ya se importó: solo se añadirán lecturas nuevas (si las hay).");
+      setFile({ name: f.name, size: f.size, bytes, text, hash });
+    } catch (e) { setFileError(e instanceof Error ? `No se pudo leer el archivo: ${e.message}` : "No se pudo leer el archivo."); }
+    finally { setBusy(false); }
   };
   const ok = parsed && !("error" in parsed) ? (parsed as ParseResult) : null;
   return (
     <div className="stack">
-      <Card title="Importar datos de LibreView" sub="En libreview.com: Informes/Descargar datos de glucosa (CSV). La disponibilidad y el formato pueden variar según país y cuenta.">
+      <Card title="Importar PDF de LibreLink o CSV de LibreView" sub="Selecciona el PDF que puedes exportar desde LibreLink/LibreView. Se procesa en este dispositivo, sin enviar el documento a la IA ni a un servidor.">
         <ol className="small" style={{ marginTop: 0 }}>
-          <li>Descarga el CSV desde LibreView (no lo abras ni lo guardes con Excel antes: puede cambiar el formato).</li>
-          <li>Selecciónalo aquí: se procesa en este dispositivo.</li>
-          <li>Revisa periodo, unidad, orden de fecha y avisos, y confirma.</li>
+          <li>Exporta o comparte tu informe PDF de LibreLink (preferiblemente con la página «Informe AGP»).</li>
+          <li>Selecciónalo aquí. Revisa el periodo y las métricas que se han podido leer.</li>
+          <li>Confirma para ver el informe en Glucosa → Resumen. También se admite el CSV con lecturas individuales de LibreView.</li>
         </ol>
-        <input type="file" accept=".csv,text/csv,.txt,application/pdf,.pdf" onChange={(e) => void onFile(e.target.files?.[0])} aria-label="Archivo CSV o PDF" />
-        <p className="xs dim">Nunca pedimos tu usuario ni contraseña de LibreView/LibreLink. PDF AGP: extracción experimental solo de métricas resumidas.</p>
+        <input type="file" accept=".csv,text/csv,.txt,application/pdf,.pdf" disabled={busy} onChange={(e) => { void onFile(e.target.files?.[0]); e.target.value = ""; }} aria-label="Archivo CSV o PDF" />
+        <p className="xs dim">Nunca pedimos tu usuario ni contraseña. PDF: máximo 10 MB y 60 páginas. No se reconstruyen lecturas a partir de curvas ni se importan tratamientos del PDF.</p>
+        {busy && <p role="status" className="small">Procesando el archivo…</p>}
+        {fileError && <Notice kind="warn">{fileError}</Notice>}
       </Card>
-      {pdf && (
-        <Card title="Informe PDF (métricas resumidas)" right={<span className="badge warn">Experimental</span>}>
-          {pdf.found.length ? (
-            <>
-              <table className="data"><tbody>
-                {pdf.periodText && <tr><th>Periodo</th><td>{pdf.periodText}</td></tr>}
-                {pdf.pctInRange != null && <tr><th>En rango</th><td>{pdf.pctInRange} %</td></tr>}
-                {pdf.pctLow != null && <tr><th>Bajo</th><td>{pdf.pctLow} %</td></tr>}
-                {pdf.pctVeryLow != null && <tr><th>Muy bajo</th><td>{pdf.pctVeryLow} %</td></tr>}
-                {pdf.pctHigh != null && <tr><th>Alto</th><td>{pdf.pctHigh} %</td></tr>}
-                {pdf.pctVeryHigh != null && <tr><th>Muy alto</th><td>{pdf.pctVeryHigh} %</td></tr>}
-                {pdf.meanMgdl != null && <tr><th>Glucosa media</th><td>{pdf.meanMgdl} mg/dL</td></tr>}
-                {pdf.gmi != null && <tr><th>GMI</th><td>{pdf.gmi} %</td></tr>}
-                {pdf.cv != null && <tr><th>Variabilidad (CV)</th><td>{pdf.cv} %</td></tr>}
-                {pdf.activePct != null && <tr><th>Sensor activo</th><td>{pdf.activePct} %</td></tr>}
-              </tbody></table>
-              <button className="btn primary" style={{ marginTop: 10 }} onClick={async () => {
-                await put("cgm_imports", { fileName: "Informe AGP (PDF)", fileSize: 0, fileHash: `pdf-${Date.now()}`, format: "agp_pdf", parserVersion: "agp-pdf-1.0", importedAt: nowIso(), periodStart: null, periodEnd: null, readingsCount: 0, duplicatesSkipped: 0, rowsRejected: 0, unit: "mg/dL", timezone: tz, warnings: ["Solo métricas agregadas extraídas de texto; verifica con el informe original."], rawStored: false, reportSummary: Object.fromEntries(Object.entries(pdf).filter(([k]) => k !== "found")) as Record<string, number | string> });
-                toast("Resumen del informe guardado");
-                setPdf(null);
-              }}>Guardar resumen</button>
-            </>
-          ) : <Notice kind="warn">No se reconocieron métricas en el PDF. Usa el CSV.</Notice>}
-        </Card>
-      )}
+      {pdf && pdfFile && <Card title="Revisar informe PDF">
+        {hasAgpMetrics(pdf) ? <>
+          <PdfReportMetrics summary={agpSummaryRecord(pdf)} />
+          {pdf.warnings.map((w) => <Notice key={w} kind="warn">{w}</Notice>)}
+          <Notice kind="info">Se guardarán métricas resumidas, no lecturas individuales. Comprueba los valores con el documento original antes de confirmar.</Notice>
+          <Toggle checked={keepRaw} onChange={setKeepRaw} label="Conservar el PDF original cifrado en este dispositivo" hint="Es opcional. El original no se sincroniza ni se envía a la IA." />
+          <ActionButton className="btn primary" onRun={async () => {
+            setBusy(true);
+            try {
+              const result = await saveAgpPdfImport(pdf, { ...pdfFile, keepRaw, timezone: tz });
+              setPdf(null); setPdfFile(null);
+              return result.duplicate ? "El PDF ya estaba importado: no se ha duplicado" : "Informe PDF guardado. Ya puedes verlo en Resumen";
+            } finally { setBusy(false); }
+          }} success={(message) => message}>Confirmar importación PDF</ActionButton>
+        </> : <Notice kind="warn">No se reconocen métricas AGP en este PDF. No se ha guardado nada. Comprueba que incluya la página «Informe AGP» y texto seleccionable; si es una imagen escaneada, necesitará reconocimiento de texto.</Notice>}
+      </Card>}
       {file && parsed && "error" in parsed && (
         <Card title="Mapeo manual de columnas" sub={parsed.error}>
           <div className="grid g3">
@@ -374,8 +380,9 @@ function ImportView({ tz }: { tz: string }) {
               <div className="li" key={i.id}>
                 <div className="grow">
                   <div className="t">{i.fileName}</div>
-                  <div className="s">{i.importedAt.slice(0, 16).replace("T", " ")} · {i.format} · {i.readingsCount} lecturas · {i.duplicatesSkipped} duplicadas · {i.rowsRejected} descartadas · {i.unit} · {i.timezone} · parser {i.parserVersion}</div>
-                  {i.periodStart && <div className="xs dim">{i.periodStart.slice(0, 10)} → {i.periodEnd?.slice(0, 10)}</div>}
+                  <div className="s">{i.importedAt.slice(0, 16).replace("T", " ")} · {i.format === "agp_pdf" ? "PDF · métricas resumidas (sin lecturas individuales)" : `${i.format} · ${i.readingsCount} lecturas · ${i.duplicatesSkipped} duplicadas · ${i.rowsRejected} descartadas`} · {i.unit} · {i.timezone} · parser {i.parserVersion}</div>
+                  {i.reportSummary?.periodText && <div className="xs dim">Periodo del PDF: {i.reportSummary.periodText} · <Link href="/diabetes?tab=resumen">Ver informes</Link></div>}
+                  {i.format !== "agp_pdf" && i.periodStart && <div className="xs dim">{i.periodStart.slice(0, 10)} → {i.periodEnd?.slice(0, 10)}</div>}
                 </div>
                 {i.rawStored && <button className="btn sm ghost" onClick={async () => { await deleteRawFile(i.id); toast("Original borrado"); }}>Borrar original</button>}
                 <button className="icon-btn" aria-label="Borrar importación" onClick={async () => { if (confirmAction("¿Borrar esta importación y sus lecturas?")) { await deleteImport(i.id); toast("Importación borrada"); } }}><Icon name="trash" /></button>

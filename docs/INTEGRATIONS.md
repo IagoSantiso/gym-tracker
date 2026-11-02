@@ -4,7 +4,7 @@ Verificado el 2026-11-01 contra documentación oficial cuando existe. Arquitectu
 
 | Fuente | ¿Posible? | Implementación v1 |
 | --- | --- | --- |
-| LibreView / LibreLink (Abbott) | **Sin API pública** para pacientes/desarrolladores. Solo acuerdos B2B (p. ej. Epic) y agregadores con licencia de Abbott. Existen APIs no oficiales: **no se usan**. | Importación manual de CSV exportado por el usuario (+ PDF AGP experimental). Adaptador `ApiAdapter` reservado por si Abbott publica una API oficial. |
+| LibreView / LibreLink (Abbott) | **Sin API pública** para pacientes/desarrolladores. Solo acuerdos B2B (p. ej. Epic) y agregadores con licencia de Abbott. Existen APIs no oficiales: **no se usan**. | Importación manual de CSV exportado por el usuario (+ PDF AGP con métricas resumidas y periodo, sin reconstruir lecturas de las gráficas). Adaptador `ApiAdapter` reservado por si Abbott publica una API oficial. |
 | Polar AccessLink v3 | **Sí**: cualquier usuario de Polar Flow puede crear un cliente en admin.polaraccesslink.com. | OAuth2 en servidor, registro de usuario, sincronización de ejercicios (30 días). |
 | Android Health Connect | API **solo Android** on-device; una web/PWA no puede leerla. | No en v1. Diseño de companion Android documentado abajo. Mientras: importación CSV genérica de pasos/sueño. |
 | Apple Health | Sin cliente iOS. | No. |

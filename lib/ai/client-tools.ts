@@ -3,6 +3,7 @@
  * Ejecutores de herramientas del asistente en el CLIENTE (local-first): leen IndexedDB y devuelven
  * resúmenes mínimos; las de escritura crean PROPUESTAS validadas (nunca aplican cambios).
  */
+import { agpSummaryRecord, type AgpPdfSummary } from "@/lib/domain/cgm/agp-pdf";
 import { productRecord, type NewProduct } from "./food-product";
 import { tbl } from "@/lib/db/db";
 import { active, all } from "@/lib/db/repo";
@@ -26,7 +27,7 @@ import { loadDayBalance } from "@/lib/services/balance";
 import { scanDeep } from "@/lib/domain/safety/guardrails";
 import { loadCatalog, weekMeals } from "@/lib/services/nutrition";
 import { createProposal } from "@/lib/services/plan";
-import { readingsBetween } from "@/lib/services/cgm";
+import { agpPdfReports, readingsBetween } from "@/lib/services/cgm";
 
 export interface ToolOutcome {
   content: string;
@@ -149,7 +150,14 @@ const READ: Record<string, (input: never) => Promise<unknown>> = {
     const d = await tbl("diabetes_settings").get("me");
     const p = await tbl("profiles").get("me");
     const last = await tbl("cgm_readings").orderBy("ts").reverse().filter((x) => active(x) && x.kind === "historic").first();
-    if (!last) return { available: false, message: "No hay datos de glucosa importados." };
+    const pdfReports = (await agpPdfReports()).slice(0, 5).map((r) => ({
+      ...agpSummaryRecord(r.reportSummary as unknown as AgpPdfSummary), source: "agp_pdf", individual_readings: false,
+      note: "Métricas del PDF en su periodo y rangos publicados, no recalculables para otro intervalo. No permiten episodios ni cruces horarios con ejercicio o comidas.",
+    }));
+    if (!last) return pdfReports.length ? {
+      available: true, source: "agp_pdf", individual_readings: false, requested_days: days, pdf_reports: pdfReports,
+      message: "Hay informes PDF con resúmenes, no lecturas individuales. Cita sus fechas y rangos originales; no inventes lecturas, episodios ni relaciones con comidas o ejercicio.",
+    } : { available: false, message: "No hay datos de glucosa importados." };
     const end = Date.parse(last.ts) + 60000;
     const start = end - days * 864e5;
     const rs = (await readingsBetween(start, end)).map((r) => ({ ms: Date.parse(r.ts), mgdl: r.valueMgdl, originalValue: r.originalValue, originalUnit: r.originalUnit }));
@@ -157,7 +165,7 @@ const READ: Record<string, (input: never) => Promise<unknown>> = {
     const m = computeMetrics(rs, start, end, ranges, 15);
     const ex = (await all("endurance_sessions")).filter((e) => Date.parse(e.startedAt) >= start).map((e) => ({ id: e.id, label: e.sport, group: e.sport, start: Date.parse(e.startedAt), end: Date.parse(e.startedAt) + e.durationSec * 1000 }));
     return {
-      available: true, unit_reported: "mg/dL (convierte a la unidad del usuario si la pide)", ranges_mgdl: ranges, ranges_source: d?.targetsSource,
+      pdf_reports: pdfReports, available: true, unit_reported: "mg/dL (convierte a la unidad del usuario si la pide)", ranges_mgdl: ranges, ranges_source: d?.targetsSource,
       period: { start: new Date(start).toISOString(), end: new Date(end).toISOString(), days: r1(m.days), last_data_at: last.ts, coverage_pct: r1(m.coveragePct), readings: m.n, gaps_over_45min: m.gaps.length, sufficient_for_conclusions: m.sufficient },
       pct: { very_low: r1(m.pct.vlow), low: r1(m.pct.low), in_range: r1(m.pct.in), high: r1(m.pct.high), very_high: r1(m.pct.vhigh) },
       mean_mgdl: r1(m.mean), sd_mgdl: r1(m.sd), cv_pct: r1(m.cv), gmi_pct_estimate: m.gmi, gmi_note: m.gmiReason,

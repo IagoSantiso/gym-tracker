@@ -1,0 +1,23 @@
+Informe AGP
+marzo 4, 2026 - marzo 17, 2026 (14 Dias)
+ESTADISTICA Y OBJETIVOS DE GLUCOSA
+Tiempo activo del Sensor: 96%
+Rangos y objetivos para Diabetes de tipo 1 o tipo 2
+Intervalo objetivo 70-180 mg/dL Mayor que 70% (16h 48min)
+Por debajo 70 mg/dL Menor que 4% (58min)
+Por debajo 54 mg/dL Menor que 1% (14min)
+Por encima 180 mg/dL Menor que 25% (6h)
+Por encima 250 mg/dL Menor que 5% (1h 12min)
+Glucosa promedio 154 mg/dL
+Indicador de gestion de glucosa (GMI) 7,0% o 53 mmol/mol
+Variabilidad de la glucosa 33,2%
+Definido como porcentaje del coeficiente de variacion (%CV); objetivo 36 %
+TIEMPO EN RANGOS
+Alto 181 - 250 mg/dL 24% (5h 46min)
+Intervalo objetivo 70 - 180 mg/dL 65% (15h 36min)
+Bajo 54 - 69 mg/dL 2% (29min)
+250 180 70 54
+Muy alto >250 mg/dL 8% (1h 55min)
+Muy bajo <54 mg/dL 1% (14min)
+PERFIL DE GLUCOSA AMBULATORIO (AGP)
+Percentiles 95% 75% 50% 25% 5%
