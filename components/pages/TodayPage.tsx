@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Card, Empty, Icon, Kpi, Notice, SourceBadge, useToast } from "@/components/ui";
+import { ActionButton, Card, Empty, Icon, Kpi, Notice, SourceBadge, useToast } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
 import { BalanceCard, Portions } from "@/components/pages/NutritionPage";
 import { ProposalCard } from "@/components/plan/ProposalCard";
@@ -146,7 +146,7 @@ export function TodayPage() {
                       {r && m.status === "planned" && <Portions recipeIngredients={r.ingredients} cat={cat} servings={m.servings} baseServings={r.servings} />}
                       {m.status === "replaced" && <div className="xs dim">Sustituida por lo que registraste</div>}
                     </div>
-                    {m.status === "eaten" ? <span className="badge ok">Hecha</span> : m.status === "replaced" ? null : <button className="btn sm primary" onClick={async () => { await markEaten(m); toast("Comida registrada"); }}><Icon name="check" />Hecha</button>}
+                    {m.status === "eaten" ? <span className="badge ok">Hecha</span> : m.status === "replaced" ? null : <ActionButton className="btn sm primary" icon="check" onRun={() => markEaten(m)} success="Comida registrada">Hecha</ActionButton>}
                     {m.status === "planned" && <Link className="btn sm ghost" href="/nutricion?tab=hoy" aria-label={`Cambiar ${r?.name}`}><Icon name="swap" /></Link>}
                   </div>
                 );

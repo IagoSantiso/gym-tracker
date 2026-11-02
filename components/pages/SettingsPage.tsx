@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Card, Field, Icon, Notice, NumInput, PageHead, SourceBadge, Tabs, Toggle, confirmAction, useTabParam, useToast } from "@/components/ui";
+import { ActionButton, Card, Field, Icon, Notice, NumInput, PageHead, SourceBadge, Tabs, Toggle, confirmAction, useTabParam, useToast } from "@/components/ui";
 import { ChipsF, ListF, NumF, SelectF, TextF } from "@/components/settings/fields";
 import { useDiabetes, useGoals, useLive, usePreferences, useProfile, useTable } from "@/lib/db/hooks";
 import { audit, nowIso, patch, put } from "@/lib/db/repo";
@@ -314,9 +314,7 @@ function IntegrationsTab() {
           {polar?.configured && !polar.connected && <a className="btn primary" href="/api/integrations/polar/authorize" onClick={() => void put("consents", { id: "polar", kind: "polar", granted: true, grantedAt: nowIso(), revokedAt: null, version: 1 })}>Conectar con Polar</a>}
           {polar?.connected && (
             <>
-              <button className="btn primary" disabled={busy} onClick={async () => { setBusy(true); const r = await polarSync(p.timezone); setBusy(false); toast("error" in r ? r.error : `${r.created} nuevas · ${r.skipped} ya estaban`); }}>
-                <Icon name="sync" />{busy ? "Sincronizando…" : "Sincronizar ahora"}
-              </button>
+              <ActionButton className="btn primary" icon="sync" busyLabel="Sincronizando…" onRun={async () => { const r = await polarSync(p.timezone); if ("error" in r) throw new Error(r.error); return `${r.created} nuevas · ${r.skipped} ya estaban`; }} success={(m) => m}>Sincronizar ahora</ActionButton>
               <button className="btn danger" onClick={async () => { if (confirmAction("¿Desconectar Polar? Los entrenamientos ya importados se conservan.")) { await polarDisconnect(); setPolar({ configured: true, connected: false }); toast("Polar desconectado"); } }}>Desconectar</button>
             </>
           )}
@@ -353,49 +351,275 @@ function IntegrationsTab() {
   );
 }
 
+const SYNC_TITLE: Record<SyncState["status"], string> = {
+  disabled: "Sincronización desactivada",
+  signed_out: "Sin sesión iniciada",
+  idle: "Todo sincronizado",
+  syncing: "Sincronizando…",
+  offline: "Sin conexión",
+  error: "La última sincronización falló",
+};
+
+/** "hace un momento", "hace 5 min", "hoy 10:32", "2 nov 18:01" */
+function ago(iso: string | null): string {
+  if (!iso) return "nunca";
+  const d = Date.now() - Date.parse(iso);
+  if (d < 60_000) return "hace un momento";
+  if (d < 3_600_000) return `hace ${Math.round(d / 60_000)} min`;
+  const dt = new Date(iso);
+  const time = dt.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  return dt.toDateString() === new Date().toDateString() ? `hoy ${time}` : `${dt.toLocaleDateString("es-ES", { day: "numeric", month: "short" })} ${time}`;
+}
+
+/** Extrae credenciales de un enlace de acceso (por si la redirección fue a otra dirección). */
+function parseAuthLink(text: string): { code?: string; access_token?: string; refresh_token?: string; token_hash?: string; type?: string } | null {
+  try {
+    const u = new URL(text.trim());
+    const q = u.searchParams;
+    const h = new URLSearchParams(u.hash.replace(/^#/, ""));
+    const r = {
+      code: q.get("code") ?? undefined,
+      access_token: h.get("access_token") ?? undefined,
+      refresh_token: h.get("refresh_token") ?? undefined,
+      token_hash: q.get("token_hash") ?? q.get("token") ?? undefined,
+      type: q.get("type") ?? undefined,
+    };
+    return r.code || r.access_token || r.token_hash ? r : null;
+  } catch {
+    return null;
+  }
+}
+
 function SyncTab() {
   const [s, setS] = useState<SyncState>(getSyncState());
   const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+  const [code, setCode] = useState("");
+  const [link, setLink] = useState("");
+  const [, tick] = useState(0);
   const toast = useToast();
   const consent = useTable("consents")?.find((c) => c.kind === "cloud_sync")?.granted;
   const jobs = useLive(async () => (await all("sync_jobs")).sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 5), []) ?? [];
-  useEffect(() => { const un = subscribeSync(setS); return () => { un(); }; }, []);
+  useEffect(() => {
+    const un = subscribeSync(setS);
+    void syncNow();
+    const sub = getSupabase()?.auth.onAuthStateChange((ev) => {
+      if (ev === "SIGNED_IN" && !getSyncState().email) { setSentTo(null); toast("Sesión iniciada. Sincronizando…", "ok"); void syncNow(); }
+    });
+    return () => { un(); sub?.data.subscription.unsubscribe(); };
+  }, [toast]);
+  useEffect(() => { const t = setInterval(() => tick((x) => x + 1), 30_000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
   if (!supabaseConfigured()) {
     return (
       <Card title="Sincronización en la nube">
-        <Notice kind="info">Esta instalación no tiene Supabase configurado: todo se guarda solo en este dispositivo. Para sincronizar entre dispositivos, crea un proyecto en Supabase, aplica <code>supabase/migrations</code> y define <code>NEXT_PUBLIC_SUPABASE_URL</code> y <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>.</Notice>
+        <Notice kind="info">Esta dirección de la app no tiene la nube configurada: todo se guarda solo en este dispositivo. Si usas otra dirección (por ejemplo, la principal de Vercel), abre la app desde allí. Para configurarla: proyecto Supabase con <code>supabase/migrations</code> y variables <code>NEXT_PUBLIC_SUPABASE_URL</code> y <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>.</Notice>
       </Card>
     );
   }
   const sb = getSupabase()!;
+  const validEmail = /^\S+@\S+\.\S+$/.test(email.trim());
+  const sendLink = async () => {
+    const to = email.trim();
+    const { error } = await sb.auth.signInWithOtp({ email: to, options: { emailRedirectTo: `${location.origin}/ajustes?tab=sync`, shouldCreateUser: true } });
+    if (error) throw new Error(/rate|seconds/i.test(error.message) ? "Has pedido varios enlaces seguidos; espera un minuto y vuelve a intentarlo." : error.message);
+    setSentTo(to);
+    setCooldown(60);
+  };
+  const afterLogin = async () => {
+    setSentTo(null);
+    setCode("");
+    setLink("");
+    const r = await syncNow();
+    return r;
+  };
+  const doSync = async () => {
+    const r = await syncNow();
+    if (r.ok) return r.pushed || r.pulled ? `Sincronizado: ${r.pushed} subidos, ${r.pulled} recibidos` : "Sincronizado: ya estaba todo al día";
+    const why: Record<string, string> = {
+      signed_out: "Inicia sesión primero", no_consent: "Activa «Sincronizar mis datos» primero", offline: "Sin conexión: se sincronizará al volver la red",
+      not_configured: "La nube no está configurada", busy: "Ya se está sincronizando", error: r.error ?? "Error",
+    };
+    throw new Error(why[r.reason ?? "error"]);
+  };
+  const status = s.email && !consent ? "disabled" : s.status;
+  const signedIn = !!s.email;
   return (
     <div className="stack">
-      <Card title="Cuenta" sub="Acceso con enlace mágico por email (sin contraseñas).">
-        {s.email ? (
-          <div className="row between">
-            <span>Sesión iniciada como <b>{s.email}</b></span>
-            <button className="btn sm ghost" onClick={async () => { await sb.auth.signOut(); toast("Sesión cerrada"); void syncNow(); }}>Cerrar sesión</button>
+{signedIn ? <>      <Card title="Estado">
+        <div className="sync-hero" data-s={status} role="status" aria-live="polite">
+          <div className="dot">{status === "syncing" ? <span className="spinner" /> : <Icon name={status === "idle" ? "check" : status === "error" || status === "offline" ? "alert" : "sync"} />}</div>
+          <div style={{ minWidth: 0 }}>
+            <b>{SYNC_TITLE[status]}</b>
+            <span className="small muted">
+              {status === "error" ? s.error : signedIn ? `Última: ${ago(s.lastSyncAt)}` : "Tus datos están solo en este dispositivo."}
+              {signedIn && s.pending > 0 && ` · ${s.pending} cambios por subir`}
+            </span>
           </div>
-        ) : sent ? (
-          <Notice kind="info">Te hemos enviado un enlace a {email}. Ábrelo en este dispositivo.</Notice>
-        ) : (
-          <div className="row">
-            <input className="input" style={{ maxWidth: 320 }} type="email" placeholder="tu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" />
-            <button className="btn primary" disabled={!/^\S+@\S+\.\S+$/.test(email)} onClick={async () => {
-              const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: `${location.origin}/ajustes?tab=sync`, shouldCreateUser: true } });
-              if (error) toast(error.message); else setSent(true);
-            }}>Enviar enlace</button>
-          </div>
+        </div>
+        <ol className="steps small" style={{ marginTop: 12 }}>
+          <li className={signedIn ? "done" : ""}>Inicia sesión con tu email (abajo).</li>
+          <li className={consent ? "done" : ""}>Activa «Sincronizar mis datos».</li>
+          <li>Repite en tus otros dispositivos con el mismo email: se quedan con los datos de la nube.</li>
+        </ol>
+        <div className="hr" />
+        <Toggle checked={!!consent} label="Sincronizar mis datos con mi nube" hint="Los archivos originales de glucosa y las muestras de actividad nunca se suben."
+          onChange={async (v) => {
+            await put("consents", { id: "cloud_sync", kind: "cloud_sync", granted: v, grantedAt: v ? nowIso() : null, revokedAt: v ? null : nowIso(), version: 1 });
+            toast(v ? "Sincronización activada" : "Sincronización desactivada", v ? "ok" : "info");
+            if (v) void syncNow();
+          }} />
+        <div className="row" style={{ marginTop: 10 }}>
+          <ActionButton className="btn primary" icon="sync" busyLabel="Sincronizando…" disabled={!signedIn || !consent} onRun={doSync} success={(m) => m}>Sincronizar ahora</ActionButton>
+        </div>
+        {jobs.length > 0 && (
+          <details style={{ marginTop: 10 }}>
+            <summary className="xs dim">Historial</summary>
+            <ul className="xs dim" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {jobs.map((j) => <li key={j.id}>{ago(j.startedAt)} · {j.error ? `error: ${j.error}` : `${j.pushed} subidos, ${j.pulled} recibidos`}</li>)}
+            </ul>
+          </details>
         )}
       </Card>
-      <Card title="Estado" right={<span className="badge">{s.status}</span>}>
-        <Toggle checked={!!consent} label="Sincronizar mis datos con mi proyecto Supabase" hint="Los archivos originales de glucosa y las muestras de actividad nunca se suben."
-          onChange={async (v) => { await put("consents", { id: "cloud_sync", kind: "cloud_sync", granted: v, grantedAt: v ? nowIso() : null, revokedAt: v ? null : nowIso(), version: 1 }); void syncNow(); }} />
-        <p className="small muted">Pendientes de subir: {s.pending}. Última sincronización: {s.lastSyncAt?.slice(0, 16).replace("T", " ") ?? "—"}.{s.error && <><br />Error: {s.error}</>}</p>
-        <button className="btn" onClick={() => void syncNow()}><Icon name="sync" />Sincronizar ahora</button>
-        {jobs.length > 0 && <div className="xs dim" style={{ marginTop: 8 }}>{jobs.map((j) => `${j.startedAt.slice(11, 16)} ↑${j.pushed} ↓${j.pulled}${j.error ? " ⚠" : ""}`).join(" · ")}</div>}
+
+      <Card title="Cuenta" sub="Acceso con enlace por email, sin contraseñas.">
+        {signedIn ? (
+          <div className="row between">
+            <span className="row" style={{ gap: 8 }}><Icon name="check" /> Sesión iniciada como <b>{s.email}</b></span>
+            <ActionButton className="btn sm ghost" onRun={async () => { await sb.auth.signOut(); await syncNow(); }} success="Sesión cerrada">Cerrar sesión</ActionButton>
+          </div>
+        ) : sentTo ? (
+          <div className="stack">
+            <Notice kind="info" icon="check">
+              <b>Enlace enviado a {sentTo}.</b> Abre el correo en este dispositivo y pulsa el enlace; volverás aquí con la sesión iniciada. Mira también en spam.
+            </Notice>
+            <Field label="¿El correo trae un código de 6 dígitos? Escríbelo aquí">
+              <div className="row">
+                <input className="input" style={{ maxWidth: 160 }} inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))} aria-label="Código del email" />
+                <ActionButton className="btn" disabled={code.length < 6} onRun={async () => {
+                  const { error } = await sb.auth.verifyOtp({ email: sentTo, token: code, type: "email" });
+                  if (error) throw new Error("Código no válido o caducado");
+                  await afterLogin();
+                }} success="Sesión iniciada">Entrar</ActionButton>
+              </div>
+            </Field>
+            <details>
+              <summary className="small" style={{ cursor: "pointer" }}>¿El enlace te llevó a una página que no carga (p. ej. «localhost»)?</summary>
+              <p className="small muted">Copia la dirección completa de esa página (barra del navegador) y pégala aquí; la app terminará el acceso. Para que no vuelva a pasar, en Supabase → Authentication → URL Configuration pon como Site URL <code>{typeof location !== "undefined" ? location.origin : ""}</code> y añade <code>{typeof location !== "undefined" ? `${location.origin}/**` : ""}</code> en Redirect URLs.</p>
+              <div className="row">
+                <input className="input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="http://localhost:3000/?code=…" aria-label="Dirección del enlace" />
+                <ActionButton className="btn" disabled={!parseAuthLink(link)} onRun={async () => {
+                  const p = parseAuthLink(link)!;
+                  const r = p.code ? await sb.auth.exchangeCodeForSession(p.code)
+                    : p.access_token && p.refresh_token ? await sb.auth.setSession({ access_token: p.access_token, refresh_token: p.refresh_token })
+                    : await sb.auth.verifyOtp({ token_hash: p.token_hash!, type: (p.type as "email" | "magiclink") ?? "email" });
+                  if (r.error) throw new Error("El enlace no es válido, ha caducado o se abrió en otro navegador. Pide uno nuevo.");
+                  await afterLogin();
+                }} success="Sesión iniciada">Completar acceso</ActionButton>
+              </div>
+            </details>
+            <div className="row">
+              <ActionButton className="btn ghost" disabled={cooldown > 0} onRun={sendLink} success="Enlace reenviado">{cooldown > 0 ? `Reenviar (${cooldown} s)` : "Reenviar enlace"}</ActionButton>
+              <button className="btn ghost" onClick={() => setSentTo(null)}>Cambiar email</button>
+            </div>
+          </div>
+        ) : (
+          <form className="row" onSubmit={(e) => e.preventDefault()}>
+            <input className="input" style={{ maxWidth: 320 }} type="email" inputMode="email" autoComplete="email" placeholder="tu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" />
+            <ActionButton type="submit" className="btn primary" icon="mail" busyLabel="Enviando…" disabled={!validEmail} onRun={sendLink} success={null}>Enviar enlace</ActionButton>
+          </form>
+        )}
       </Card>
+</> : <>      <Card title="Cuenta" sub="Acceso con enlace por email, sin contraseñas.">
+        {signedIn ? (
+          <div className="row between">
+            <span className="row" style={{ gap: 8 }}><Icon name="check" /> Sesión iniciada como <b>{s.email}</b></span>
+            <ActionButton className="btn sm ghost" onRun={async () => { await sb.auth.signOut(); await syncNow(); }} success="Sesión cerrada">Cerrar sesión</ActionButton>
+          </div>
+        ) : sentTo ? (
+          <div className="stack">
+            <Notice kind="info" icon="check">
+              <b>Enlace enviado a {sentTo}.</b> Abre el correo en este dispositivo y pulsa el enlace; volverás aquí con la sesión iniciada. Mira también en spam.
+            </Notice>
+            <Field label="¿El correo trae un código de 6 dígitos? Escríbelo aquí">
+              <div className="row">
+                <input className="input" style={{ maxWidth: 160 }} inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))} aria-label="Código del email" />
+                <ActionButton className="btn" disabled={code.length < 6} onRun={async () => {
+                  const { error } = await sb.auth.verifyOtp({ email: sentTo, token: code, type: "email" });
+                  if (error) throw new Error("Código no válido o caducado");
+                  await afterLogin();
+                }} success="Sesión iniciada">Entrar</ActionButton>
+              </div>
+            </Field>
+            <details>
+              <summary className="small" style={{ cursor: "pointer" }}>¿El enlace te llevó a una página que no carga (p. ej. «localhost»)?</summary>
+              <p className="small muted">Copia la dirección completa de esa página (barra del navegador) y pégala aquí; la app terminará el acceso. Para que no vuelva a pasar, en Supabase → Authentication → URL Configuration pon como Site URL <code>{typeof location !== "undefined" ? location.origin : ""}</code> y añade <code>{typeof location !== "undefined" ? `${location.origin}/**` : ""}</code> en Redirect URLs.</p>
+              <div className="row">
+                <input className="input" value={link} onChange={(e) => setLink(e.target.value)} placeholder="http://localhost:3000/?code=…" aria-label="Dirección del enlace" />
+                <ActionButton className="btn" disabled={!parseAuthLink(link)} onRun={async () => {
+                  const p = parseAuthLink(link)!;
+                  const r = p.code ? await sb.auth.exchangeCodeForSession(p.code)
+                    : p.access_token && p.refresh_token ? await sb.auth.setSession({ access_token: p.access_token, refresh_token: p.refresh_token })
+                    : await sb.auth.verifyOtp({ token_hash: p.token_hash!, type: (p.type as "email" | "magiclink") ?? "email" });
+                  if (r.error) throw new Error("El enlace no es válido, ha caducado o se abrió en otro navegador. Pide uno nuevo.");
+                  await afterLogin();
+                }} success="Sesión iniciada">Completar acceso</ActionButton>
+              </div>
+            </details>
+            <div className="row">
+              <ActionButton className="btn ghost" disabled={cooldown > 0} onRun={sendLink} success="Enlace reenviado">{cooldown > 0 ? `Reenviar (${cooldown} s)` : "Reenviar enlace"}</ActionButton>
+              <button className="btn ghost" onClick={() => setSentTo(null)}>Cambiar email</button>
+            </div>
+          </div>
+        ) : (
+          <form className="row" onSubmit={(e) => e.preventDefault()}>
+            <input className="input" style={{ maxWidth: 320 }} type="email" inputMode="email" autoComplete="email" placeholder="tu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" />
+            <ActionButton type="submit" className="btn primary" icon="mail" busyLabel="Enviando…" disabled={!validEmail} onRun={sendLink} success={null}>Enviar enlace</ActionButton>
+          </form>
+        )}
+      </Card>
+      <Card title="Estado">
+        <div className="sync-hero" data-s={status} role="status" aria-live="polite">
+          <div className="dot">{status === "syncing" ? <span className="spinner" /> : <Icon name={status === "idle" ? "check" : status === "error" || status === "offline" ? "alert" : "sync"} />}</div>
+          <div style={{ minWidth: 0 }}>
+            <b>{SYNC_TITLE[status]}</b>
+            <span className="small muted">
+              {status === "error" ? s.error : signedIn ? `Última: ${ago(s.lastSyncAt)}` : "Tus datos están solo en este dispositivo."}
+              {signedIn && s.pending > 0 && ` · ${s.pending} cambios por subir`}
+            </span>
+          </div>
+        </div>
+        <ol className="steps small" style={{ marginTop: 12 }}>
+          <li className={signedIn ? "done" : ""}>Inicia sesión con tu email (abajo).</li>
+          <li className={consent ? "done" : ""}>Activa «Sincronizar mis datos».</li>
+          <li>Repite en tus otros dispositivos con el mismo email: se quedan con los datos de la nube.</li>
+        </ol>
+        <div className="hr" />
+        <Toggle checked={!!consent} label="Sincronizar mis datos con mi nube" hint="Los archivos originales de glucosa y las muestras de actividad nunca se suben."
+          onChange={async (v) => {
+            await put("consents", { id: "cloud_sync", kind: "cloud_sync", granted: v, grantedAt: v ? nowIso() : null, revokedAt: v ? null : nowIso(), version: 1 });
+            toast(v ? "Sincronización activada" : "Sincronización desactivada", v ? "ok" : "info");
+            if (v) void syncNow();
+          }} />
+        <div className="row" style={{ marginTop: 10 }}>
+          <ActionButton className="btn primary" icon="sync" busyLabel="Sincronizando…" disabled={!signedIn || !consent} onRun={doSync} success={(m) => m}>Sincronizar ahora</ActionButton>
+        </div>
+        {jobs.length > 0 && (
+          <details style={{ marginTop: 10 }}>
+            <summary className="xs dim">Historial</summary>
+            <ul className="xs dim" style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {jobs.map((j) => <li key={j.id}>{ago(j.startedAt)} · {j.error ? `error: ${j.error}` : `${j.pushed} subidos, ${j.pulled} recibidos`}</li>)}
+            </ul>
+          </details>
+        )}
+      </Card>
+
+</>}
     </div>
   );
 }
@@ -443,13 +667,13 @@ function DataTab() {
     <div className="stack">
       <Card title="Exportar" sub="Tus datos son tuyos: copia completa en JSON o tablas en CSV.">
         <div className="row">
-          <button className="btn primary" onClick={async () => download(await exportAll(), `nexo-${new Date().toISOString().slice(0, 10)}.json`)}><Icon name="download" />Copia completa (JSON)</button>
-          <button className="btn" onClick={() => void copyBackup()}>Copiar copia</button>
-          <button className="btn" onClick={() => void shareBackup()}>Compartir</button>
+          <ActionButton className="btn primary" icon="download" onRun={async () => download(await exportAll(), `nexo-${new Date().toISOString().slice(0, 10)}.json`)} success="Copia descargada">Copia completa (JSON)</ActionButton>
+          <ActionButton className="btn" onRun={copyBackup} success={null}>Copiar copia</ActionButton>
+          <ActionButton className="btn" onRun={shareBackup} success={null}>Compartir</ActionButton>
           <select className="input" style={{ maxWidth: 240 }} value={table} onChange={(e) => setTable(e.target.value as TableName)} aria-label="Tabla a exportar">
             {TABLES.filter((t) => !t.serverOnly && t.name !== "raw_files").map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
           </select>
-          <button className="btn" onClick={async () => download(await exportCsv(table), `${table}.csv`)}>CSV</button>
+          <ActionButton className="btn" onRun={async () => download(await exportCsv(table), `${table}.csv`)} success="CSV descargado">CSV</ActionButton>
         </div>
       </Card>
       <Card title="Restaurar copia" sub="Pega aquí el contenido completo de una copia JSON de NEXO (o elige el archivo). La copia sustituye a los datos de este dispositivo: perfil, menús, plan e historial.">

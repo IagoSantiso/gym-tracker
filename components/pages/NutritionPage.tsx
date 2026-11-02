@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { Card, Empty, Field, Icon, Kpi, Modal, Notice, NumInput, PageHead, SourceBadge, Tabs, confirmAction, useTabParam, useToast } from "@/components/ui";
+import { ActionButton, Card, Empty, Field, Icon, Kpi, Modal, Notice, NumInput, PageHead, SourceBadge, Tabs, confirmAction, useTabParam, useToast } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
 import { useLive, usePreferences, useTable } from "@/lib/db/hooks";
 import { tbl } from "@/lib/db/db";
@@ -103,7 +103,7 @@ function MealRow({ e, cat, onSwap, openPortions }: { e: MealEntry; cat: Catalog;
           <button className="btn sm ghost" onClick={() => void patch("meal_entries", e.id, { status: "planned" })}>Recuperar</button>
         ) : (
           <>
-            <button className="btn sm primary" onClick={async () => { await markEaten(e); toast("Comida registrada"); }}><Icon name="check" />Hecha</button>
+            <ActionButton className="btn sm primary" icon="check" onRun={() => markEaten(e)} success="Comida registrada">Hecha</ActionButton>
             <button className="btn sm" onClick={onSwap}><Icon name="swap" />Cambiar</button>
             <button className="btn sm ghost" onClick={() => void patch("meal_entries", e.id, { status: e.status === "skipped" ? "planned" : "skipped" })}>{e.status === "skipped" ? "Recuperar" : "Saltar"}</button>
           </>
@@ -131,7 +131,7 @@ function SwapModal({ entry, cat, onClose }: { entry: MealEntry | null; cat: Cata
               <NutrientLine t={o.totals} compact />
               <div className="xs dim">{o.dKcal >= 0 ? "+" : ""}{Math.round(o.dKcal)} kcal · {o.dCarbs >= 0 ? "+" : ""}{Math.round(o.dCarbs)} g hidratos respecto a la actual</div>
             </div>
-            <button className="btn sm primary" onClick={async () => { await swapMeal(entry!.id, o.recipe.id); toast("Comida cambiada"); onClose(); }}>Elegir</button>
+            <ActionButton className="btn sm primary" onRun={async () => { await swapMeal(entry!.id, o.recipe.id); onClose(); }} success="Comida cambiada">Elegir</ActionButton>
           </div>
         ))}
       </div>
@@ -144,8 +144,8 @@ function DayTotals({ logs, targets }: { logs: NutrientTotals[]; targets?: Awaite
   const rng = (r: [number, number] | null | undefined) => (r ? (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`) : "—");
   return (
     <div className="grid g4">
-      <Kpi value={Math.round(sum.kcal)} label={`kcal registradas · objetivo ${rng(targets?.kcal)}`} source="calculated" />
-      <Kpi value={`${Math.round(sum.p)} g`} label={`proteína · rango ${rng(targets?.proteinG)} g`} source="calculated" />
+      <Kpi value={Math.round(sum.kcal)} label={`kcal registradas${targets?.kcal ? ` · objetivo ${rng(targets.kcal)}` : ""}`} source="calculated" />
+      <Kpi value={`${Math.round(sum.p)} g`} label={`proteína${targets?.proteinG ? ` · rango ${rng(targets.proteinG)} g` : ""}`} source="calculated" />
       <Kpi value={`${Math.round(sum.c)} g`} label={`hidratos disponibles${targets?.carbsG ? ` · plan ${targets.carbsG} g` : ""}`} source="calculated" />
       <Kpi value={`${Math.round(sum.f)} g`} label="fibra · referencia ≥ 25 g" source="calculated" />
     </div>
@@ -206,18 +206,27 @@ export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean 
   };
   return (
     <Card title="Balance del día" sub="Lo comido + lo que queda del menú, frente a tus rangos. Orientativo.">
-      {!b.logs.length && <p className="small muted" style={{ marginTop: 0 }}>Cuando registres lo que comes (aunque no sea lo del menú), aquí verás cómo va el día y opciones para ajustar lo que queda.</p>}
+      {!b.logs.length && !b.remaining.length ? (
+        <p className="small muted" style={{ margin: 0 }}>Cuando tengas menú o registres lo que comes (aunque no sea lo del menú), aquí verás cómo va el día frente a tus rangos.</p>
+      ) : (<>
+      {!b.logs.length && <p className="small muted" style={{ marginTop: 0 }}>Aún no has registrado nada hoy: abajo ves lo previsto por el menú.</p>}
+      {!b.targets.kcal && <Notice kind="info">Sin objetivos calculables todavía: completa peso, altura y edad en Ajustes o fija tus objetivos para ver los rangos.</Notice>}
       <div className="list">
-        {b.nutrients.filter((n) => !compact || n.key !== "fiberG").map((n) => {
+        {b.nutrients.filter((n) => (!compact || n.key !== "fiberG") && (n.target || n.consumed > 0 || n.planned > 0)).map((n) => {
           const max = Math.max(n.projected, n.target && Number.isFinite(n.target[1]) ? n.target[1] : n.target?.[0] ?? 0, 1);
           return (
             <div key={n.key} className="balance-row">
-              <div className="row between small"><b>{n.label}</b><span>{Math.round(n.consumed)} comido + {Math.round(n.planned)} previsto = <b>{Math.round(n.projected)}</b> {n.unit} · objetivo {fmtR(n.target)} <span className={`badge ${n.status === "ok" ? "ok" : n.status === "unknown" ? "" : "warn"}`}>{STATUS_LABEL[n.status]}</span></span></div>
+              <div className="row between small" style={{ flexWrap: "nowrap", alignItems: "baseline" }}>
+                <b>{n.label}</b>
+                <span style={{ textAlign: "right" }}><b>{Math.round(n.projected)}</b> {n.unit}{n.target && <span className="muted"> / {fmtR(n.target)}</span>} {n.status !== "unknown" && <span className={`badge ${n.status === "ok" ? "ok" : "warn"}`}>{STATUS_LABEL[n.status]}</span>}</span>
+              </div>
+              <div className="xs dim">{Math.round(n.consumed)} comido + {Math.round(n.planned)} previsto</div>
               <div className="bar" aria-hidden><span style={{ width: `${Math.min(100, (n.consumed / max) * 100)}%` }} /><span className="planned" style={{ width: `${Math.min(100, (n.planned / max) * 100)}%` }} /></div>
             </div>
           );
         })}
       </div>
+      </>)}
       {b.messages.map((m, i) => <Notice key={i} kind="info">{m}</Notice>)}
       {b.hasEstimates && <p className="xs dim">Incluye comidas estimadas (sin etiqueta): los valores pueden desviarse bastante.</p>}
       {b.options.length > 0 && compact && <a className="btn sm" href="/nutricion?tab=hoy">Ver {b.options.length} opciones para reajustar lo que queda</a>}
@@ -237,7 +246,7 @@ export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean 
           </div>
         </>
       )}
-      <p className="xs dim" style={{ marginBottom: 0 }}>No se proponen saltarse comidas ni «quemar» lo comido con ejercicio. Prioriza mantener los hidratos de cada comida.</p>
+      {b.logs.length > 0 && <p className="xs dim" style={{ marginBottom: 0 }}>No se proponen saltarse comidas ni «quemar» lo comido con ejercicio. Prioriza mantener los hidratos de cada comida.</p>}
     </Card>
   );
 }
@@ -265,7 +274,7 @@ function MenuTab({ cat }: { cat: Catalog }) {
         </div>
         <div className="row no-print">
           <label className="small row" style={{ gap: 6 }}><input type="checkbox" checked={useTarget} onChange={(e) => setUseTarget(e.target.checked)} />Ajustar raciones a mi objetivo {targets?.kcal ? `(${targets.kcal[0]}–${targets.kcal[1]} kcal)` : "(sin objetivo calculable)"}</label>
-          <button className="btn primary" onClick={async () => { await generateWeekMenu(ws, { kcalTarget: useTarget ? targets?.kcal ?? null : null, keepLocked: true }); toast("Menú generado (se conservan las comidas bloqueadas y hechas)"); }}><Icon name="sync" />{meals.length ? "Regenerar" : "Generar menú"}</button>
+          <ActionButton className="btn primary" icon="sync" busyLabel="Generando…" onRun={() => generateWeekMenu(ws, { kcalTarget: useTarget ? targets?.kcal ?? null : null, keepLocked: true })} success="Menú generado (se conservan las comidas bloqueadas y hechas)">{meals.length ? "Regenerar" : "Generar menú"}</ActionButton>
           <button className="btn ghost" onClick={() => window.print()}><Icon name="printer" />Imprimir</button>
         </div>
       </div>

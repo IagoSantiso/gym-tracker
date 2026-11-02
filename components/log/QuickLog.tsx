@@ -1,7 +1,7 @@
 "use client";
 /** Modales de registro rápido. Todo se guarda primero en local; funcionan sin conexión. */
 import { useEffect, useMemo, useState } from "react";
-import { Field, Modal, Notice, NumInput, useToast } from "@/components/ui";
+import { ActionButton, Field, Modal, Notice, NumInput, useToast } from "@/components/ui";
 import { nowIso, put } from "@/lib/db/repo";
 import { useDiabetes, useLive, useProfile } from "@/lib/db/hooks";
 import { localDate, localTime, zonedWallToUtc } from "@/lib/domain/time";
@@ -47,11 +47,11 @@ export function QuickLog({ kind, onClose }: { kind: QuickKind; onClose: () => vo
   );
 }
 
-function Footer({ onClose, onSave, disabled }: { onClose: () => void; onSave: () => void; disabled?: boolean }) {
+function Footer({ onClose, onSave, disabled }: { onClose: () => void; onSave: () => unknown; disabled?: boolean }) {
   return (
     <>
       <button className="btn ghost" onClick={onClose}>Cancelar</button>
-      <button className="btn primary" disabled={disabled} onClick={onSave}>Guardar</button>
+      <ActionButton className="btn primary" icon="check" busyLabel="Guardando…" disabled={disabled} onRun={async () => { await onSave(); }} success={null}>Guardar</ActionButton>
     </>
   );
 }

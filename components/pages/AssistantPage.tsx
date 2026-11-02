@@ -12,6 +12,9 @@ import type { ChatItem } from "@/lib/ai/tools";
 import { asksForDosing } from "@/lib/domain/safety/guardrails";
 
 const SUGGESTIONS = [
+  "He desayunado dos tostadas con café con leche y una tortilla de dos huevos: regístralo.",
+  "¿Cómo va mi día de comidas y qué ajusto en la cena?",
+  "Me han ofrecido dos rosquillas: ¿cuánto suponen y cómo encajo el resto del día?",
   "¿Cómo ha ido mi semana de entrenamiento?",
   "Hoy tengo solo 30 minutos: ¿qué cambio propones en el plan?",
   "La prensa está ocupada: dame alternativas para hoy.",
@@ -58,9 +61,14 @@ export function AssistantPage() {
     const base = [...items, await userItem(msg.trim(), items.length === 0)];
     setItems(base);
     setText("");
-    const final = await runConversation(base, (u) => { setItems(u.items); if (u.error) setError(u.error); }, id);
-    await put("ai_conversations", { id, title: msg.trim().slice(0, 60), provider: status?.provider ?? "?", model: status?.model ?? "?", items: final });
-    setBusy(false);
+    try {
+      const final = await runConversation(base, (u) => { setItems(u.items); if (u.error) setError(u.error); }, id);
+      await put("ai_conversations", { id, title: msg.trim().slice(0, 60), provider: status?.provider ?? "?", model: status?.model ?? "?", items: final });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo completar la respuesta. Inténtalo de nuevo.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const ready = aiOn && status?.configured;
@@ -69,7 +77,11 @@ export function AssistantPage() {
       <PageHead eyebrow="Asistente" title="Pregunta sobre tus datos" actions={items.length ? <button className="btn ghost" onClick={() => { setItems([]); setConvId(null); setError(null); }}><Icon name="plus" />Nueva</button> : undefined}>
         Responde con tus datos reales mediante herramientas de solo lectura y crea propuestas que tú apruebas. Nunca da dosis de insulina ni indicaciones clínicas.
       </PageHead>
-      {!aiOn && <Notice kind="info">El asistente está desactivado. <Link href="/ajustes?tab=privacidad">Actívalo y elige qué categorías puede consultar</Link>. Todo lo demás funciona sin IA.</Notice>}
+      {!aiOn && (
+        <Card title="El asistente está desactivado" sub="Es opcional: todo lo demás funciona sin IA. Al activarlo eliges qué categorías de datos puede consultar.">
+          <Link className="btn primary" href="/ajustes?tab=privacidad"><Icon name="chat" />Activar y elegir categorías</Link>
+        </Card>
+      )}
       {aiOn && status && !status.configured && <Notice kind="warn">El servidor no tiene configurada una clave de IA (<code>ANTHROPIC_API_KEY</code> u <code>OPENAI_API_KEY</code>). La app funciona igualmente sin asistente.</Notice>}
       {aiOn && status === null && <Notice kind="warn">Sin conexión con el servidor: el asistente necesita red.</Notice>}
       {aiOn && (
@@ -80,7 +92,7 @@ export function AssistantPage() {
           <div className="pill-row">{SUGGESTIONS.map((s) => <button key={s} className="chip" onClick={() => void send(s)}>{s}</button>)}</div>
         )}
         {items.map((it, i) => <Bubble key={i} it={it} />)}
-        {busy && <div className="small muted" aria-live="polite">Pensando…</div>}
+        {busy && <div className="thinking" aria-live="polite"><span /><span /><span /> <span className="small muted">Pensando…</span></div>}
         {error && <Notice kind="warn">{error}</Notice>}
         <div ref={endRef} />
       </div>
@@ -94,7 +106,7 @@ export function AssistantPage() {
         onSubmit={(e) => { e.preventDefault(); if (asksForDosing(text)) toast("Recuerda: el asistente no puede indicar dosis ni correcciones."); void send(text); }}>
         <textarea className="input" rows={2} value={text} disabled={!ready || busy} onChange={(e) => setText(e.target.value)} placeholder={ready ? "Escribe tu pregunta…" : "Asistente no disponible"} aria-label="Mensaje para el asistente"
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); } }} style={{ resize: "none" }} />
-        <button className="btn primary" disabled={!ready || busy || !text.trim()} type="submit" aria-label="Enviar"><Icon name="right" /></button>
+        <button className="btn primary" disabled={!ready || busy || !text.trim()} type="submit" aria-label="Enviar" aria-busy={busy}>{busy ? <span className="spinner" aria-hidden /> : <Icon name="right" />}</button>
       </form>
       {convs.length > 0 && (
         <Card title="Conversaciones guardadas en este dispositivo" className="no-print">

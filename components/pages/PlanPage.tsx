@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Card, Empty, Field, Icon, Modal, Notice, NumInput, PageHead, Section, confirmAction, useToast } from "@/components/ui";
+import { ActionButton, Card, Empty, Field, Icon, Modal, Notice, NumInput, PageHead, Section, confirmAction, useToast } from "@/components/ui";
 import { ProposalCard } from "@/components/plan/ProposalCard";
 import { CheckinModal } from "@/components/log/QuickLog";
 import { useLive, useProfile } from "@/lib/db/hooks";
@@ -59,7 +59,7 @@ export function PlanPage() {
         Plan generado por reglas transparentes según tu disponibilidad. Puedes bloquear días o sesiones; los cambios sugeridos requieren tu aprobación.
       </PageHead>
       <div className="row" style={{ margin: "8px 0 14px" }}>
-        <button className="btn" onClick={async () => { if (confirmAction("¿Regenerar la semana? Se conservan las sesiones hechas y lo bloqueado.")) { const r = await generatePlan(ws); toast(r.notes.length ? r.notes.join(" ") : "Semana regenerada"); } }}><Icon name="sync" />Regenerar</button>
+        <ActionButton className="btn" icon="sync" busyLabel="Regenerando…" onRun={async () => { if (!confirmAction("¿Regenerar la semana? Se conservan las sesiones hechas y lo bloqueado.")) return null; const r = await generatePlan(ws); return r.notes.length ? r.notes.join(" ") : "Semana regenerada"; }} success={(m) => m}>Regenerar</ActionButton>
         {ws === weekStartOf(today) && (
           <>
             <button className="btn" onClick={() => (todayCheckin ? void propose(proposeEaseToday(items ?? [], today, todayCheckin)) : setCheckin(true))}>Me encuentro cansado</button>
@@ -82,14 +82,14 @@ export function PlanPage() {
           const realE = actual?.e.filter((x) => x.date === d) ?? [];
           return (
             <Card key={d} className={d === today ? "" : ""} title={<span>{WEEKDAYS_ES[i]} <span className="muted small">{formatDateEs(d, { day: "numeric", month: "short" })}</span>{d === today && <span className="badge ok" style={{ marginLeft: 8 }}>Hoy</span>}</span>}
-              right={<button className={`btn sm ${locked ? "primary" : "ghost"}`} onClick={() => void toggleDayLock(ws, d)} aria-pressed={!!locked}><Icon name={locked ? "lock" : "unlock"} />{locked ? "Bloqueado" : "Bloquear día"}</button>}>
+              right={<button className={`btn sm ${locked ? "primary" : "ghost"}`} onClick={() => void toggleDayLock(ws, d)} aria-pressed={!!locked} aria-label={locked ? "Desbloquear día" : "Bloquear día"}><Icon name={locked ? "lock" : "unlock"} /><span className="hide-sm">{locked ? "Bloqueado" : "Bloquear día"}</span></button>}>
               {its.length === 0 && <div className="small muted">Sin sesiones previstas.</div>}
               <div className="list">
                 {its.map((it) => (
-                  <div className="li" key={it.id} style={{ opacity: it.status === "cancelled" ? 0.55 : 1 }}>
-                    <span aria-label={`Intensidad ${INT_LABEL[it.intensity]}`} title={INT_LABEL[it.intensity]} style={{ width: 18, textAlign: "center" }}>{INT_SYMBOL[it.intensity]}</span>
+                  <div className="li plan-item" key={it.id} style={{ opacity: it.status === "cancelled" ? 0.55 : 1 }}>
+                    <span className={`int int-${it.kind === "rest" ? "rest" : it.intensity}`} role="img" aria-label={`Intensidad ${INT_LABEL[it.intensity]}`} title={INT_LABEL[it.intensity]} />
                     <div className="grow">
-                      <div className="t" style={{ textDecoration: it.status === "cancelled" ? "line-through" : undefined }}>{it.title}{it.locked && " 🔒"}</div>
+                      <div className="t" style={{ textDecoration: it.status === "cancelled" ? "line-through" : undefined }}>{it.title}{it.locked && " 🔒"} <span className={`badge ${it.status === "done" ? "ok" : it.status === "cancelled" ? "bad" : it.status === "planned" ? "" : "warn"}`}>{STATUS_LABEL[it.status]}</span></div>
                       <div className="s">
                         {it.kind !== "rest" && `${it.durationMin} min · ${INT_LABEL[it.intensity]}`}
                         {it.runSpec?.structure ? ` · ${it.runSpec.structure}` : ""}
@@ -98,9 +98,10 @@ export function PlanPage() {
                         {it.originalDate && it.originalDate !== it.date ? ` · (antes ${formatDateEs(it.originalDate)})` : ""}
                       </div>
                     </div>
-                    <span className={`badge ${it.status === "done" ? "ok" : it.status === "cancelled" ? "bad" : it.status === "planned" ? "" : "warn"}`}>{STATUS_LABEL[it.status]}</span>
-                    {it.kind === "strength" && it.status !== "done" && it.templateId != null && d === today && <Link className="btn sm primary" href={`/entrenamiento/sesion?t=${it.templateId}&d=${it.dayIndex}&pi=${it.id}`}>Empezar</Link>}
-                    {it.kind !== "rest" && <button className="icon-btn" aria-label={`Editar ${it.title}`} onClick={() => setEditing(it)}><Icon name="edit" /></button>}
+                    <div className="acts">
+                      {it.kind === "strength" && it.status !== "done" && it.templateId != null && d === today && <Link className="btn sm primary" href={`/entrenamiento/sesion?t=${it.templateId}&d=${it.dayIndex}&pi=${it.id}`}>Empezar</Link>}
+                      {it.kind !== "rest" && <button className="icon-btn" aria-label={`Editar ${it.title}`} onClick={() => setEditing(it)}><Icon name="edit" /></button>}
+                    </div>
                   </div>
                 ))}
               </div>

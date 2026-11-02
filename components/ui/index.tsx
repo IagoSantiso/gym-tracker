@@ -9,12 +9,12 @@ export { Icon };
 export function PageHead({ eyebrow, title, children, actions }: { eyebrow?: string; title: string; children?: ReactNode; actions?: ReactNode }) {
   return (
     <header className="pg-head">
-      <div className="row between" style={{ alignItems: "flex-end" }}>
+      <div className="pg-title">
         <div>
           {eyebrow && <div className="eyebrow">{eyebrow}</div>}
           <h1>{title}</h1>
         </div>
-        {actions && <div className="row no-print">{actions}</div>}
+        {actions && <div className="row no-print pg-actions">{actions}</div>}
       </div>
       {children && <p>{children}</p>}
     </header>
@@ -144,8 +144,18 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
 }
 
 export function Tabs<T extends string>({ tabs, value, onChange, label }: { tabs: { id: T; label: string }[]; value: T; onChange: (v: T) => void; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [atEnd, setAtEnd] = useState(false);
+  const check = useCallback(() => {
+    const el = ref.current;
+    if (el) setAtEnd(el.scrollLeft + el.clientWidth >= el.scrollWidth - 4);
+  }, []);
+  useEffect(() => {
+    check();
+    ref.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [value, check]);
   return (
-    <div className="tabs" role="tablist" aria-label={label}>
+    <div ref={ref} className={`tabs${atEnd ? " at-end" : ""}`} role="tablist" aria-label={label} onScroll={check}>
       {tabs.map((t) => (
         <button key={t.id} role="tab" aria-selected={t.id === value} onClick={() => onChange(t.id)}>
           {t.label}
@@ -217,24 +227,94 @@ export function Bar({ value, max, label, color }: { value: number; max: number; 
 }
 
 /* ───────── Toasts ───────── */
-const ToastCtx = createContext<(msg: string) => void>(() => {});
+export type ToastKind = "ok" | "error" | "info";
+type ToastFn = (msg: string, kind?: ToastKind) => void;
+const ToastCtx = createContext<ToastFn>(() => {});
 export const useToast = () => useContext(ToastCtx);
 
+/** Heurística para avisos antiguos que solo pasan texto: los errores se ven como error. */
+const guessKind = (msg: string): ToastKind => (/(error|no se pudo|no válid|inválid|falló|fallo|sin conexión|no es una|no hay)/i.test(msg) ? "error" : "ok");
+
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<{ id: number; msg: string }[]>([]);
-  const show = useCallback((msg: string) => {
+  const [items, setItems] = useState<{ id: number; msg: string; kind: ToastKind }[]>([]);
+  const show = useCallback<ToastFn>((msg, kind) => {
     const id = Date.now() + Math.random();
-    setItems((x) => [...x.slice(-2), { id, msg }]);
-    setTimeout(() => setItems((x) => x.filter((i) => i.id !== id)), 2200);
+    const k = kind ?? guessKind(msg);
+    setItems((x) => [...x.slice(-2), { id, msg, kind: k }]);
+    setTimeout(() => setItems((x) => x.filter((i) => i.id !== id)), k === "error" ? 6000 : 3200);
   }, []);
   return (
     <ToastCtx.Provider value={show}>
       {children}
       <div className="toast-stack" role="status" aria-live="polite">
-        {items.map((i) => <div key={i.id}>{i.msg}</div>)}
+        {items.map((i) => (
+          <div key={i.id} className={`toast-item ${i.kind}`} onClick={() => setItems((x) => x.filter((y) => y.id !== i.id))}>
+            <Icon name={i.kind === "error" ? "alert" : i.kind === "info" ? "info" : "check"} />
+            <span>{i.msg}</span>
+          </div>
+        ))}
       </div>
     </ToastCtx.Provider>
   );
+}
+
+/* ───────── Acciones con estado (pendiente → hecho / error) ───────── */
+export type ActionState = "idle" | "busy" | "done" | "error";
+
+/**
+ * Ejecuta una acción asíncrona con feedback: evita dobles pulsaciones, muestra progreso y
+ * avisa del resultado. `success` puede ser texto fijo o función del resultado; null = sin aviso.
+ */
+export function useAction() {
+  const toast = useToast();
+  const [state, setState] = useState<ActionState>("idle");
+  const busy = useRef(false);
+  const run = useCallback(async <T,>(fn: () => Promise<T> | T, opts: { success?: string | null | ((r: T) => string | null); error?: string } = {}): Promise<T | undefined> => {
+    if (busy.current) return undefined;
+    busy.current = true;
+    setState("busy");
+    try {
+      const r = await fn();
+      const msg = typeof opts.success === "function" ? opts.success(r) : opts.success;
+      if (msg) toast(msg, "ok");
+      setState("done");
+      setTimeout(() => setState((s) => (s === "done" ? "idle" : s)), 1600);
+      return r;
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      toast(opts.error ? `${opts.error}: ${m}` : m || "Algo ha fallado", "error");
+      setState("error");
+      setTimeout(() => setState((s) => (s === "error" ? "idle" : s)), 2500);
+      return undefined;
+    } finally {
+      busy.current = false;
+    }
+  }, [toast]);
+  return { state, run };
+}
+
+/**
+ * Botón para acciones asíncronas: se deshabilita y muestra un spinner mientras trabaja,
+ * un check al terminar y un aviso (toast) con el resultado.
+ */
+export function ActionButton<T>({
+  onRun, children, className = "btn", icon, success, error, busyLabel, disabled, title, ariaLabel, type = "button",
+}: {
+  onRun: () => Promise<T> | T; children: ReactNode; className?: string; icon?: IconName;
+  success?: string | null | ((r: T) => string | null); error?: string; busyLabel?: string; disabled?: boolean; title?: string; ariaLabel?: string; type?: "button" | "submit";
+}) {
+  const { state, run } = useAction();
+  return (
+    <button type={type} className={`${className} act-${state}`} disabled={disabled || state === "busy"} aria-busy={state === "busy"} title={title} aria-label={ariaLabel}
+      onClick={() => void run(onRun, { success, error })}>
+      {state === "busy" ? <span className="spinner" aria-hidden /> : state === "done" ? <Icon name="check" /> : icon ? <Icon name={icon} /> : null}
+      <span>{state === "busy" && busyLabel ? busyLabel : children}</span>
+    </button>
+  );
+}
+
+export function Spinner({ label }: { label?: string }) {
+  return <span className="row" style={{ gap: 8 }} role="status"><span className="spinner" aria-hidden />{label && <span className="small muted">{label}</span>}</span>;
 }
 
 /** Confirmación nativa para acciones irreversibles. */

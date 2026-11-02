@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { Card, Empty, Field, Icon, Kpi, Notice, PageHead, SourceBadge, Tabs, Toggle, confirmAction, useTabParam, useToast } from "@/components/ui";
+import { ActionButton, Card, Empty, Field, Icon, Kpi, Notice, PageHead, SourceBadge, Tabs, Toggle, confirmAction, useTabParam, useToast } from "@/components/ui";
 import { AgpChart, GlucoseDayChart, TirBar, type DayEvent } from "@/components/charts/glucose";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
 import { useDiabetes, useLive, useProfile, useTable } from "@/lib/db/hooks";
@@ -355,13 +355,14 @@ function ImportView({ tz }: { tz: string }) {
           {ok.rejected.length > 0 && <details className="small"><summary>Filas descartadas ({ok.rejected.length})</summary><ul>{ok.rejected.slice(0, 15).map((r) => <li key={r.line}>Línea {r.line}: {r.reason}</li>)}</ul></details>}
           {ok.events.some((e) => e.kind === "insulin") && <Notice kind="info">Los registros de insulina del archivo se guardan solo como <b>dato histórico</b>. La app nunca los usa para calcular nada.</Notice>}
           <div className="row" style={{ marginTop: 10 }}>
-            <button className="btn primary" disabled={busy || !ok.readings.length} onClick={async () => {
+            <ActionButton className="btn primary" busyLabel="Importando…" disabled={busy || !ok.readings.length} onRun={async () => {
               setBusy(true);
-              const r = await saveCgmImport(ok, { name: file.name, size: file.size, hash: file.hash, bytes: file.bytes, keepRaw, timezone: zone });
-              setBusy(false);
-              setFile(null);
-              toast(`${r.created} lecturas nuevas · ${r.duplicates} ya existían · ${r.events} eventos`);
-            }}>{busy ? "Importando…" : "Confirmar importación"}</button>
+              try {
+                const r = await saveCgmImport(ok, { name: file.name, size: file.size, hash: file.hash, bytes: file.bytes, keepRaw, timezone: zone });
+                setFile(null);
+                return `${r.created} lecturas nuevas · ${r.duplicates} ya existían · ${r.events} eventos`;
+              } finally { setBusy(false); }
+            }} success={(m) => m}>Confirmar importación</ActionButton>
             <button className="btn ghost" onClick={() => setFile(null)}>Cancelar</button>
           </div>
         </Card>

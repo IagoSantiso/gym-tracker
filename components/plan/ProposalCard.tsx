@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Card, Icon, useToast } from "@/components/ui";
+import { ActionButton, Card, Icon, useToast } from "@/components/ui";
 import type { Proposal } from "@/lib/db/types";
 import { acceptProposal, rejectProposal, revertProposal } from "@/lib/services/plan";
 
@@ -27,18 +27,18 @@ export function ProposalCard({ p }: { p: Proposal }) {
       {p.decisionReason && <p className="xs muted">Motivo del rechazo: {p.decisionReason}</p>}
       {p.status === "pending" && !rejecting && (
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn sm primary" onClick={async () => { const r = await acceptProposal(p.id); toast(r.ok ? "Cambio aplicado" : r.error ?? "No se pudo aplicar"); }}><Icon name="check" />Aceptar</button>
+          <ActionButton className="btn sm primary" icon="check" onRun={async () => { const r = await acceptProposal(p.id); if (!r.ok) throw new Error(r.error ?? "No se pudo aplicar"); }} success="Cambio aplicado">Aceptar</ActionButton>
           <button className="btn sm ghost" onClick={() => setRejecting(true)}>Rechazar</button>
         </div>
       )}
       {rejecting && (
         <div className="row" style={{ marginTop: 8 }}>
           <input className="input" style={{ maxWidth: 300 }} placeholder="Motivo (opcional)" value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Motivo del rechazo" />
-          <button className="btn sm" onClick={async () => { await rejectProposal(p.id, reason.trim() || null); setRejecting(false); }}>Confirmar rechazo</button>
+          <ActionButton className="btn sm" onRun={async () => { await rejectProposal(p.id, reason.trim() || null); setRejecting(false); }} success="Propuesta rechazada">Confirmar rechazo</ActionButton>
         </div>
       )}
       {p.status === "accepted" && p.inverse && (
-        <button className="btn sm ghost" style={{ marginTop: 8 }} onClick={async () => { await revertProposal(p.id); toast("Cambio deshecho"); }}>Deshacer</button>
+        <div style={{ marginTop: 8 }}><ActionButton className="btn sm ghost" onRun={() => revertProposal(p.id)} success="Cambio deshecho">Deshacer</ActionButton></div>
       )}
     </Card>
   );

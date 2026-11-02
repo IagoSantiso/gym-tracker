@@ -24,6 +24,11 @@ Las fases 0–7 del prompt maestro (adaptado a Claude Code, ver `docs/PROMPT_MAE
 - **IA**: `get_day_balance`, `log_meal_estimate` (base de datos + estimación validada para alimentos desconocidos, p. ej. rosquillas) y `propose_meal_variant` (cambiar ingredientes por los que tienes, aviso si cambian los hidratos). Nuevos guardarraíles: no compensar con ejercicio ni saltarse comidas (D25).
 - Verificación: `npm test` 121 tests · `npm run test:e2e` 39 comprobaciones (incluye cantidades, balance y restaurar pegando).
 
+## Iteración UI/UX 2026-11-02
+- Feedback en todas las acciones importantes (spinner, check, avisos de éxito/error, botón que se «hunde» al pulsar), toasts accesibles encima de la barra inferior.
+- Sincronización rehecha: estado claro (icono + texto + «última: hace X»), pasos numerados, código del email, recuperación si el enlace va a `localhost`, reenviar con cuenta atrás.
+- Plan: intensidad como barra de color + texto, acciones sin apretar el texto en móvil; cabeceras con la descripción antes de los botones; pestañas con indicador de desplazamiento; balance del día compacto cuando no hay datos; asistente con botón para activarlo, indicador «pensando» y sugerencias de comidas.
+
 ## Criterios de aceptación (sección 18)
 | # | Criterio | Estado | Cómo se verifica |
 | --- | --- | --- | --- |

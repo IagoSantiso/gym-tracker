@@ -5,7 +5,7 @@ import { getSyncState, subscribeSync, type SyncState } from "@/lib/sync/manager"
 
 const LABEL: Record<SyncState["status"], string> = {
   disabled: "Solo en este dispositivo",
-  signed_out: "Sin sesión",
+  signed_out: "Solo en este dispositivo",
   idle: "Sincronizado",
   syncing: "Sincronizando…",
   offline: "Sin conexión",
@@ -29,7 +29,7 @@ export function SyncIndicator() {
     };
   }, []);
   const status = !online && s.status !== "disabled" ? "offline" : s.status;
-  const pending = s.pending > 0 && status !== "disabled" ? ` · ${s.pending} pendientes` : "";
+  const pending = s.pending > 0 && s.email && status !== "disabled" ? ` · ${s.pending} por subir` : "";
   return (
     <Link href="/ajustes?tab=sync" className="sync" data-s={status} title={s.error ?? undefined} style={{ textDecoration: "none" }}>
       <i aria-hidden />

@@ -34,16 +34,33 @@ async function consentOk() {
   return !!(await tbl("consents").get("cloud_sync"))?.granted;
 }
 
-export async function syncNow(): Promise<void> {
+export interface SyncOutcome {
+  ok: boolean;
+  pushed: number;
+  pulled: number;
+  reason?: "not_configured" | "signed_out" | "no_consent" | "offline" | "busy" | "error";
+  error?: string;
+}
+
+let current: Promise<SyncOutcome> | null = null;
+
+/** Sincroniza y devuelve el resultado (para dar feedback en la UI). */
+export function syncNow(): Promise<SyncOutcome> {
+  current ??= doSync().finally(() => { current = null; });
+  return current;
+}
+
+async function doSync(): Promise<SyncOutcome> {
   const sb = getSupabase();
   set({ pending: await pendingCount() });
-  if (!sb) return set({ status: "disabled" });
+  const no = (reason: SyncOutcome["reason"]): SyncOutcome => ({ ok: false, pushed: 0, pulled: 0, reason });
+  if (!sb) { set({ status: "disabled" }); return no("not_configured"); }
   const { data } = await sb.auth.getSession();
-  if (!data.session) return set({ status: "signed_out", email: null });
+  if (!data.session) { set({ status: "signed_out", email: null }); return no("signed_out"); }
   set({ email: data.session.user.email ?? null });
-  if (!(await consentOk())) return set({ status: "disabled" });
-  if (typeof navigator !== "undefined" && !navigator.onLine) return set({ status: "offline" });
-  if (running) return;
+  if (!(await consentOk())) { set({ status: "disabled" }); return no("no_consent"); }
+  if (typeof navigator !== "undefined" && !navigator.onLine) { set({ status: "offline" }); return no("offline"); }
+  if (running) return no("busy");
   running = true;
   set({ status: "syncing", error: null });
   const startedAt = nowIso();
@@ -53,11 +70,13 @@ export async function syncNow(): Promise<void> {
     set({ status: "idle", lastSyncAt: at, pending: await pendingCount() });
     await put("sync_jobs", { startedAt, finishedAt: at, pushed: r.pushed, pulled: r.pulled, error: null });
     // Dispositivo nuevo que acaba de adoptar los datos de la nube: recarga para partir de ellos.
-    if (r.first === "adopted" && typeof location !== "undefined") location.reload();
+    if (r.first === "adopted" && typeof location !== "undefined") setTimeout(() => location.reload(), 1200);
+    return { ok: true, pushed: r.pushed, pulled: r.pulled };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     set({ status: navigator.onLine ? "error" : "offline", error: msg, pending: await pendingCount() });
     await put("sync_jobs", { startedAt, finishedAt: nowIso(), pushed: 0, pulled: 0, error: msg.slice(0, 200) });
+    return { ok: false, pushed: 0, pulled: 0, reason: "error", error: msg };
   } finally {
     running = false;
   }
