@@ -168,6 +168,9 @@ function PrefsTab() {
           <SelectF table="preferences" field="deloadEveryWeeks" value={p.deloadEveryWeeks ? String(p.deloadEveryWeeks) as "4" : ""} label="Semana de descarga" options={[{ v: "", l: "Manual" }, { v: "4" as const, l: "Cada 4 semanas" }, { v: "5" as const, l: "Cada 5 semanas" }, { v: "6" as const, l: "Cada 6 semanas" }]} />
           <Toggle checked={p.adaptationMode} onChange={(v) => void patch("preferences", "me", { adaptationMode: v })} label="Modo adaptación (máx. 2 series)" hint="Recomendado las primeras 2 semanas al retomar." />
           <Toggle checked={p.autoApplyProgression} onChange={(v) => void patch("preferences", "me", { autoApplyProgression: v })} label="Precargar la carga sugerida" hint="Si está desactivado, verás «Hoy: X kg» con un botón Aplicar." />
+          <Field label="Compensación con actividad suave (% máx. del exceso)" hint="Si un día comes de más, la app puede proponer cubrir hasta este % con actividad suave (caminar o trotar en cinta, máx. 30 min); el resto, ajustando lo que queda por comer. 0 = no proponer nunca. Tope 50 %.">
+            <NumInput value={p.compensationMaxPct ?? 30} ariaLabel="Porcentaje máximo de compensación" inputMode="numeric" min={0} max={50} onChange={(n) => void patch("preferences", "me", { compensationMaxPct: n ?? 0 })} />
+          </Field>
           <Field label="Recordatorio de pausa activa (min, con la app abierta)" hint="0 o vacío = desactivado.">
             <NumInput value={p.activeBreakReminderMin ?? null} ariaLabel="Minutos entre pausas" inputMode="numeric" onChange={(n) => void patch("preferences", "me", { activeBreakReminderMin: n || null })} />
           </Field>

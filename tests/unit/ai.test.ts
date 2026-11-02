@@ -32,10 +32,10 @@ describe("servidor del asistente", () => {
   it("bloquea compensar comida con ejercicio o saltarse comidas, sin bloquear el consejo sano", async () => {
     const r = await runChatTurn(req([{ role: "user", text: "me he pasado con la grasa" }]), fake({ text: "Puedes quemar esas calorías haciendo 40 minutos más de cardio esta tarde." }));
     expect(r.item!.text).toBe(BLOCKED_NUTRITION_RESPONSE);
-    for (const bad of ["Entrena más intenso hoy para compensar el desayuno.", "Lo mejor es que te saltes... no: sáltate la cena.", "Haz un ayuno hasta mañana.", "Hoy no cenes y listo.", "Haz la tirada más larga para quemar las rosquillas."]) {
+    for (const bad of ["Entrena más intenso hoy para compensar el desayuno.", "Lo mejor es que te saltes... no: sáltate la cena.", "Haz un ayuno hasta mañana.", "Hoy no cenes y listo.", "Haz la tirada más larga para quemar las rosquillas.", "Para compensar, haz series de 400 m a tope.", "Compensa con una hora de bici.", "Haz 60 minutos de cinta para quemar la comida."]) {
       expect(scanOutput(bad).ok, bad).toBe(false);
     }
-    for (const good of ["Sin saltarte comidas, elige una cena con menos grasa.", "No te saltes la cena: mejor una opción a la plancha.", "Mantén tu entrenamiento como estaba planificado.", "La cena puede llevar menos aceite para compensar el día."]) {
+    for (const good of ["Sin saltarte comidas, elige una cena con menos grasa.", "No te saltes la cena: mejor una opción a la plancha.", "Mantén tu entrenamiento como estaba planificado.", "La cena puede llevar menos aceite para compensar el día.", "Si te apetece, 15 minutos de trote suave en cinta compensan parte del exceso.", "Puedes compensar una parte caminando 25 min en cinta con inclinación."]) {
       expect(scanOutput(good).ok, good).toBe(true);
     }
   });
@@ -179,7 +179,7 @@ describe("herramientas en cliente", () => {
     const bal = JSON.parse((await executeTool({ id: "2", name: "get_day_balance", input: { date: null } })).content);
     expect(bal.logged).toHaveLength(1);
     expect(bal.remaining_planned.every((m: { slot: string }) => m.slot !== "breakfast")).toBe(true);
-    expect(bal.rules).toMatch(/ejercicio/);
+    expect(bal.rules).toMatch(/ejercicio/i);
   });
   it("rechaza estimaciones incoherentes o imposibles y comidas futuras", async () => {
     await grant("ai_assistant", "ai_nutrition");
@@ -222,5 +222,34 @@ describe("acceso al asistente con código personal", () => {
     expect(await authorize(mk("otro-codigo-cualquiera-xx"))).toMatchObject({ status: 401 });
     expect(await authorize(mk())).toMatchObject({ status: 401 });
     process.env.AI_ACCESS_CODE = prev;
+  });
+});
+
+describe("compensación con actividad suave", () => {
+  beforeEach(async () => {
+    const db = new NexoDB(`comp-${++n}`);
+    setDbForTests(db);
+    resetInitForTests();
+    await db.open();
+    await ensureInitialized();
+  });
+  it("solo propone la actividad calculada por la app y si hay exceso", async () => {
+    for (const k of ["ai_assistant", "ai_training", "ai_nutrition"]) await put("consents", { id: k, kind: k as never, granted: true, grantedAt: null, revokedAt: null, version: 1 });
+    const none = await executeTool({ id: "1", name: "propose_compensation_activity", input: { option: "easy_jog", reason: "me pasé" } });
+    expect(none.isError).toBe(true);
+    // perfil completo + comida abundante registrada hoy
+    const { patch } = await import("@/lib/db/repo");
+    await patch("profiles", "me", { birthDate: "1990-01-01", heightCm: 178, sex: "male" });
+    await put("weight_entries", { date: localDate(), measuredAt: new Date().toISOString(), weightKg: 80, source: "manual" });
+    await put("food_logs", { date: localDate(), eatenAt: new Date().toISOString(), slot: "lunch", mealEntryId: null, recipeId: null, servings: null, items: [], title: "Banquete", totals: { kcal: 3600, proteinG: 100, carbsAvailableG: 300, fiberG: 10, fatG: 200, satFatG: 0, sugarsG: 0, saltG: 0, missing: [] }, source: "manual", note: null });
+    const bal = JSON.parse((await executeTool({ id: "2", name: "get_day_balance", input: { date: null } })).content);
+    expect(bal.energy.verdict).toBe("over");
+    expect(bal.compensation.pct_of_excess).toBeLessThanOrEqual(30);
+    expect(bal.compensation.options.every((o: { minutes: number }) => o.minutes >= 10 && o.minutes <= 30)).toBe(true);
+    const ok = await executeTool({ id: "3", name: "propose_compensation_activity", input: { option: "easy_jog", reason: "me pasé en la comida" } });
+    expect(ok.isError).toBeFalsy();
+    const p = (await all("proposals")).find((x) => x.kind === "ai_compensation")!;
+    expect(p.ops[0]).toMatchObject({ op: "create", table: "planned_items", record: { intensity: "easy" } });
+    expect((p.ops[0] as unknown as { record: { durationMin: number } }).record.durationMin).toBeLessThanOrEqual(30);
   });
 });

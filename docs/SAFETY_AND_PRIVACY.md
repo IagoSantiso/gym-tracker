@@ -16,9 +16,9 @@
 | Datos CGM | Siempre con periodo, cobertura, huecos, unidad y procedencia; aviso de que no es tiempo real; GMI solo con ≥14 días y ≥70 % de datos |
 | Correlaciones | "Observaciones para revisar con tu equipo", nunca causalidad ni predicción |
 | No gamificación | Sin rachas, medallas ni premios por peso, restricción o glucosa |
-| Nutrición | Sin dietas extremas: déficit limitado (≤ 25 % del gasto estimado, nunca por debajo del metabolismo basal estimado, ritmo ≤ 1 %/semana) y sin "compensar" comida con ejercicio |
+| Nutrición | Sin dietas extremas: déficit limitado (≤ 25 % del gasto estimado, nunca por debajo del metabolismo basal estimado, ritmo ≤ 1 %/semana) y la compensación con actividad limitada a la suave y acotada (D34) |
 | Reajuste del día | Determinista (`lib/domain/nutrition/balance.ts`): solo ajusta lo que queda por comer (sustituir receta o raciones ≥ 0,75), nunca elimina comidas ni toca el entrenamiento; prioriza mantener los hidratos de cada comida y marca/confirma cualquier opción que los cambie |
-| Compensar con ejercicio / saltarse comidas | Prompt + filtro de salida (`exercise_compensation`, `meal_skipping`) con mensaje de sustitución propio + tests; la IA explica por qué no y ofrece el ajuste moderado |
+| Compensar con ejercicio / saltarse comidas | Saltarse comidas: siempre bloqueado. Compensación con actividad: solo la suave y acotada que calcula `lib/domain/nutrition/energy.ts` (≤ % configurado del exceso, máx. 50 %; 10–30 min; Z1–Z2; aviso de seguir el protocolo de ejercicio en DM1, sin indicaciones de insulina). El filtro de salida bloquea compensar con intensidad alta o sesiones ≥ 40 min (D34) |
 | Comidas estimadas por IA | `log_meal_estimate`: usa la base de datos cuando existe el alimento; las estimaciones se validan (kcal coherentes con macros, densidad posible), se guardan con `source: estimated`, confianza baja y aviso de no usarlas para decisiones de insulina; siempre pendientes de aprobación |
 
 ## 2. Referencias clínicas consultadas (fechadas)

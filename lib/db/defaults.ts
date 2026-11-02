@@ -63,6 +63,7 @@ export const DEFAULT_PREFERENCES: NoBase<Preferences> = {
   activeBreakReminderMin: null,
   strengthDaysPerWeek: 3,
   activeTemplateId: "ppl-3d",
+  compensationMaxPct: 30,
 };
 
 /**

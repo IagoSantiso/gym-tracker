@@ -101,6 +101,7 @@ create table if not exists public.preferences (
   active_break_reminder_min integer,
   strength_days_per_week integer not null,
   active_template_id text,
+  compensation_max_pct integer,
   server_updated_at timestamptz not null default now(),
   primary key (user_id, id)
 );

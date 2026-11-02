@@ -3,7 +3,7 @@
  *
  * Reglas de seguridad (ver docs/SAFETY_AND_PRIVACY.md y D25):
  *  - Nunca se propone saltarse comidas ni bajar de un mínimo energético razonable.
- *  - Nunca se propone "quemar" o "compensar" lo comido con más ejercicio.
+ *  - La compensación con actividad (suave y acotada) vive en energy.ts; aquí solo comidas.
  *  - Por defecto se mantienen los hidratos de cada comida (± tolerancia): en diabetes tipo 1
  *    un cambio de hidratos puede afectar a la glucosa y a lo pautado por el equipo sanitario.
  *    Si una opción los cambia, se marca para que la persona lo revise con su protocolo.
@@ -116,7 +116,7 @@ export function dayBalance(
     messages.push(`Con lo que queda previsto acabarías unos ${extra} g por encima de tu rango de grasa (${fat.target[0]}–${fat.target[1]} g). Puedes elegir para ${remaining.length > 1 ? "las próximas comidas" : "la próxima comida"} una opción con menos grasa.`);
   }
   if (kcal.target && kcal.status === "high") {
-    messages.push(`La previsión del día queda en ~${r0(kcal.projected)} kcal (rango ${kcal.target[0]}–${kcal.target[1]}). Un ajuste moderado en lo que queda basta; no hace falta compensarlo con ejercicio ni saltarse comidas.`);
+    messages.push(`La previsión del día queda en ~${r0(kcal.projected)} kcal (rango ${kcal.target[0]}–${kcal.target[1]}). Un ajuste moderado en lo que queda basta, sin saltarte comidas.`);
   } else if (kcal.target && kcal.status === "low" && remaining.length) {
     messages.push(`La previsión queda por debajo de tu rango energético (~${r0(kcal.projected)} de ${kcal.target[0]}–${kcal.target[1]} kcal). Mejor no quedarse corto: mantén las comidas que quedan.`);
   }

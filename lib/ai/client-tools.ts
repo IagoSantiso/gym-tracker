@@ -6,7 +6,7 @@
 import { tbl } from "@/lib/db/db";
 import { active, all } from "@/lib/db/repo";
 import type { ConsentKind, PlannedItem, ProposalOp } from "@/lib/db/types";
-import { TOOL_BY_NAME, validateToolInput, type ToolCall, type ProposeSchedule, type TrainingPlanDraft, type MealPlanDraft, type RecipeDraft, type SaveNote, type Alternatives, type Meta, type LogMealEstimate, type MealVariant } from "./tools";
+import { TOOL_BY_NAME, validateToolInput, type ToolCall, type ProposeSchedule, type TrainingPlanDraft, type MealPlanDraft, type RecipeDraft, type SaveNote, type Alternatives, type Meta, type LogMealEstimate, type MealVariant, type CompensationChoice } from "./tools";
 import type { z } from "zod";
 import { addDays, localDate, minutesOfDay, weekStartOf } from "@/lib/domain/time";
 import { summarizeByExercise } from "@/lib/domain/training/progression";
@@ -185,7 +185,10 @@ const READ: Record<string, (input: never) => Promise<unknown>> = {
       app_messages: b.messages,
       rebalance_options: b.options.map((o) => ({ meal_id: o.mealId, slot: o.slot, recipe_id: o.recipe.id, name: o.recipe.name, servings: o.servings, why: o.why, carbs_change_g: Math.round(o.dCarbs), changes_carbs: o.carbsChanged })),
       includes_estimates: b.hasEstimates,
-      rules: "No propongas saltarse comidas, ayunos ni compensar con ejercicio. Mantén los hidratos de cada comida salvo que el usuario lo pida; si cambian, indícalo y remite a su protocolo/equipo. Valores orientativos.",
+      energy: b.energy.ok ? { intake_kcal: b.energy.intake, projected_intake_kcal: b.energy.projectedIntake, spent_estimated_kcal: b.energy.spent, breakdown: { base_and_daily_life: b.energy.base + b.energy.steps, exercise: b.energy.exercise }, projected_balance_kcal: b.energy.projectedBalance, target_balance_kcal: b.energy.targetBalance, verdict: b.energy.verdict, excess_kcal: b.energy.excess, note: "Estimación ±10–15 %." } : { available: false, message: b.energy.message },
+      exercise_today: b.exerciseToday,
+      compensation: b.compensation ? { covers_kcal: b.compensation.kcal, pct_of_excess: b.compensation.pct, rest_for_meals_kcal: b.compensation.restForMeals, options: b.compensation.activities.map((a, i) => ({ option: i === 0 ? "walk_incline" : "easy_jog", label: a.label, minutes: a.minutes, speed_kmh: a.speedKmh, incline_pct: a.inclinePct })), notes: b.compensation.notes } : null,
+      rules: "No propongas saltarse comidas ni ayunos. Ejercicio para compensar: solo la opción de compensation (suave, minutos fijados por la app); si es null, ninguno. Mantén los hidratos de cada comida salvo que el usuario lo pida; si cambian, indícalo y remite a su protocolo/equipo. Valores orientativos.",
     };
   },
   async get_recovery_summary({ days }: { days: number }) {
@@ -359,6 +362,26 @@ async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
     const summary = `Calculado por la app: ${Math.round(t.kcal)} kcal · ${Math.round(t.carbsAvailableG)} g hidratos disp. (${dCarbs >= 0 ? "+" : ""}${Math.round(dCarbs)} g) · ${Math.round(t.proteinG)} g proteína · ${Math.round(t.fatG)} g grasa (${t.fatG - before.fatG >= 0 ? "+" : ""}${Math.round(t.fatG - before.fatG)} g).`;
     const r = await createProposal({ domain: "nutrition", kind: "ai_meal_variant", title: `Variante: ${x.name}`, summary, reasons: [x.reason], ...metaToProposal({ ...x.meta, warnings }), ops, inverse, origin: "ai", requiresApproval: true, expiresAt: null });
     return "error" in r ? { content: r.error, isError: true } : { content: `Variante propuesta (pendiente de aprobación). ${summary}${Math.abs(dCarbs) > 10 ? " AVISO: cambia los hidratos de la comida; dilo claramente al usuario." : ""}` };
+  }
+  if (name === "propose_compensation_activity") {
+    const x = input as z.infer<typeof CompensationChoice>;
+    const b = await loadDayBalance(localDate());
+    if (!b.compensation) return { content: "Hoy no procede compensar con actividad (no hay exceso suficiente, está desactivado en Ajustes o ya hay mucha actividad). No propongas ejercicio para compensar.", isError: true };
+    const a = b.compensation.activities[x.option === "walk_incline" ? 0 : 1];
+    if (!a) return { content: "Esa opción no está disponible hoy (ya hay una sesión exigente): ofrece solo caminar.", isError: true };
+    const today = localDate();
+    const record = {
+      date: today, weekStart: weekStartOf(today), kind: a.speedKmh < 7 ? "walk" : "run", title: `${a.label} · compensación`, intensity: "easy",
+      durationMin: a.minutes, sortOrder: 90, status: "planned", locked: false, source: "calculated",
+      notes: `Cinta ${a.speedKmh} km/h, inclinación ${a.inclinePct} %. ~${b.compensation.kcal} kcal estimadas. Suave: deberías poder hablar.`,
+    };
+    const r = await createProposal({
+      domain: "plan", kind: "ai_compensation", title: `Añadir: ${a.label} ${a.minutes} min`,
+      summary: `Cubre ~${b.compensation.kcal} kcal (${b.compensation.pct} % del exceso); el resto (~${b.compensation.restForMeals} kcal) con lo que queda por comer.`,
+      reasons: [x.reason], dataUsed: ["Balance del día"], assumptions: ["Gasto estimado ±10–15 %."], warnings: b.compensation.notes, confidence: "medium",
+      ops: [{ op: "create", table: "planned_items", record }], inverse: [], origin: "ai", requiresApproval: true, expiresAt: null,
+    });
+    return "error" in r ? { content: r.error, isError: true } : { content: `Propuesta creada: ${a.label} ${a.minutes} min (pendiente de aprobación).` };
   }
   if (name === "save_user_note") {
     const x = input as z.infer<typeof SaveNote>;

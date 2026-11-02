@@ -11,7 +11,7 @@ import { SLOT_LABEL, SLOT_ORDER } from "@/lib/domain/nutrition/recipes";
 import { eligibleRecipes, swapOptions } from "@/lib/domain/nutrition/menu";
 import { quantityLabel, toCsv } from "@/lib/domain/nutrition/shopping";
 import { portionLines } from "@/lib/domain/nutrition/portions";
-import { loadDayBalance } from "@/lib/services/balance";
+import { addCompensationToPlan, loadDayBalance } from "@/lib/services/balance";
 import { addDays, formatDateEs, localDate, weekStartOf } from "@/lib/domain/time";
 import type { Food, MealEntry, MealSlot, NutrientTotals, ShopSection } from "@/lib/db/types";
 import { generateWeekMenu, loadCatalog, markEaten, refreshShoppingList, saveRecipe, setRecipePref, swapMeal, weekMeals, lookupBarcode, type Catalog } from "@/lib/services/nutrition";
@@ -215,12 +215,16 @@ export function AdjustDayCard() {
   );
 }
 
+const VERDICT = { on_track: "Día en objetivo", over: "Por encima", under: "Te quedas corto", unknown: "" } as const;
+
 const STATUS_LABEL = { low: "por debajo", ok: "en rango", high: "por encima", unknown: "sin objetivo" } as const;
 
 /** Balance del día: lo comido + lo que queda, frente a tus rangos; y opciones para reajustar lo que queda. */
 export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean }) {
   const toast = useToast();
   const b = useLive(() => loadDayBalance(localDate(), cat), [cat]);
+  const prefs = usePreferences();
+  const prefsPct = prefs.compensationMaxPct ?? 30;
   if (!b) return null;
   const fmtR = (r: [number, number] | null) => (!r ? "—" : !Number.isFinite(r[1]) ? `≥ ${r[0]}` : r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`);
   const apply = async (o: (typeof b.options)[number]) => {
@@ -230,14 +234,39 @@ export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean 
     toast("Resto del día reajustado");
   };
   return (
-    <Card title="Balance del día" sub="Lo comido + lo que queda del menú, frente a tus rangos. Orientativo.">
+    <Card title="Balance del día" sub="Lo comido + lo que queda del menú, frente a tus rangos. Orientativo." right={b.energy.ok ? <span className={`badge ${b.energy.verdict === "on_track" ? "ok" : "warn"}`}>{VERDICT[b.energy.verdict]}</span> : undefined}>
+      {b.energy.ok && (
+        <div className="energy-box">
+          <div className="energy-grid">
+            <div><small>Consumido</small><b>{b.energy.intake.toLocaleString("es-ES")}</b>{b.energy.projectedIntake > b.energy.intake && <span className="xs dim">+{(b.energy.projectedIntake - b.energy.intake).toLocaleString("es-ES")} previsto</span>}</div>
+            <div><small>Gastado (estimado)</small><b>{b.energy.spent.toLocaleString("es-ES")}</b><span className="xs dim">basal+día {b.energy.base + b.energy.steps}{b.energy.exercise ? ` · ejercicio ${b.energy.exercise}` : ""}</span></div>
+            <div><small>Balance previsto</small><b>{b.energy.projectedBalance > 0 ? "+" : ""}{b.energy.projectedBalance.toLocaleString("es-ES")}</b><span className="xs dim">objetivo {b.energy.targetBalance ? `${b.energy.targetBalance.toLocaleString("es-ES")}` : "≈ 0"}</span></div>
+          </div>
+          <div className="small" style={{ marginTop: 6 }}>{b.energy.message}</div>
+          {b.exerciseToday.length > 0 && <div className="xs dim">Ejercicio de hoy: {b.exerciseToday.map((e) => `${e.label} (~${e.kcal} kcal)`).join(" · ")}</div>}
+        </div>
+      )}
+      {b.compensation && (
+        <div className="comp-box">
+          <div className="small"><b>Opción: compensar ~{b.compensation.kcal} kcal con actividad suave</b> ({b.compensation.pct} % del exceso; tu máximo: {prefsPct} %). El resto (~{b.compensation.restForMeals} kcal), ajustando lo que queda por comer.</div>
+          <div className="list">
+            {b.compensation.activities.map((a) => (
+              <div className="li" key={a.label}>
+                <div className="grow"><div className="t">{a.label}: {a.minutes} min</div><div className="s">Cinta {a.speedKmh.toLocaleString("es-ES")} km/h · inclinación {a.inclinePct} %</div></div>
+                <ActionButton className="btn sm" icon="plus" onRun={() => addCompensationToPlan(b.date, a, b.compensation!.kcal)} success="Añadida al plan de hoy">Al plan</ActionButton>
+              </div>
+            ))}
+          </div>
+          <ul className="xs dim" style={{ margin: "4px 0 0", paddingLeft: 16 }}>{b.compensation.notes.map((n) => <li key={n}>{n}</li>)}</ul>
+        </div>
+      )}
       {!b.logs.length && !b.remaining.length ? (
         <p className="small muted" style={{ margin: 0 }}>Cuando tengas menú o registres lo que comes (aunque no sea lo del menú), aquí verás cómo va el día frente a tus rangos.</p>
       ) : (<>
       {!b.logs.length && <p className="small muted" style={{ marginTop: 0 }}>Aún no has registrado nada hoy: abajo ves lo previsto por el menú.</p>}
       {!b.targets.kcal && <Notice kind="info">Sin objetivos calculables todavía: completa peso, altura y edad en Ajustes o fija tus objetivos para ver los rangos.</Notice>}
       <div className="list">
-        {b.nutrients.filter((n) => (!compact || n.key !== "fiberG") && (n.target || n.consumed > 0 || n.planned > 0)).map((n) => {
+        {b.nutrients.filter((n) => (!compact || n.key !== "fiberG") && !(b.energy.ok && n.key === "kcal") && (n.target || n.consumed > 0 || n.planned > 0)).map((n) => {
           const max = Math.max(n.projected, n.target && Number.isFinite(n.target[1]) ? n.target[1] : n.target?.[0] ?? 0, 1);
           return (
             <div key={n.key} className="balance-row">
@@ -271,7 +300,7 @@ export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean 
           </div>
         </>
       )}
-      {b.logs.length > 0 && <p className="xs dim" style={{ marginBottom: 0 }}>No se proponen saltarse comidas ni «quemar» lo comido con ejercicio. Prioriza mantener los hidratos de cada comida.</p>}
+      {b.logs.length > 0 && <p className="xs dim" style={{ marginBottom: 0 }}>Nunca se proponen saltarse comidas ni ejercicio intenso para compensar; la actividad suave está limitada a tu % máximo y 30 min. Prioriza mantener los hidratos de cada comida.</p>}
     </Card>
   );
 }

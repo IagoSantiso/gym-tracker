@@ -87,6 +87,8 @@ export interface Preferences extends BaseRecord {
   activeBreakReminderMin?: number | null;
   strengthDaysPerWeek: 2 | 3;
   activeTemplateId?: string | null;
+  /** % máximo de un exceso de energía que se propone cubrir con actividad suave (0 = nunca; tope 50) */
+  compensationMaxPct?: number | null;
 }
 
 export type ConsentKind =

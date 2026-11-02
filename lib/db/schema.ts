@@ -53,7 +53,7 @@ export const TABLES: TableDef[] = [
       theme: "text!", mealsPerDay: "int!", allergies: "jsonb!", intolerances: "jsonb!", excludedFoods: "jsonb!",
       cookingTimeMin: "int!", budget: "text!", autoApplyProgression: "bool!", adaptationMode: "bool!",
       deloadEveryWeeks: "int", deloadActiveWeek: "date", activeBreakReminderMin: "int",
-      strengthDaysPerWeek: "int!", activeTemplateId: "text",
+      strengthDaysPerWeek: "int!", activeTemplateId: "text", compensationMaxPct: "int",
     },
   },
   {

@@ -31,6 +31,8 @@ Las fases 0–7 del prompt maestro (adaptado a Claude Code, ver `docs/PROMPT_MAE
 
 - «Ajusta mi día» (Hoy y Nutrición → Hoy): texto libre → asistente (registra lo comido y propone el resto del día). Activación del asistente guiada en su pantalla (sesión + permisos por categoría).
 
+- Balance energético del día (consumido vs gastado estimado, veredicto «Día en objetivo / Por encima / Te quedas corto») y compensación con actividad suave acotada (Ajustes → Preferencias: % máximo; herramienta IA `propose_compensation_activity`). Migración `20261102020000_compensation_pct.sql` aplicada.
+
 ## Criterios de aceptación (sección 18)
 | # | Criterio | Estado | Cómo se verifica |
 | --- | --- | --- | --- |
