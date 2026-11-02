@@ -36,7 +36,9 @@ try {
     await route.fulfill({ json: { item: { role: "assistant", text: "He recibido los adjuntos. Puedo proponer una cena con tus productos.", toolCalls: [], provider: "simulado", raw: null } } });
   });
   await page.goto(base + "/asistente");
-  await page.getByRole("checkbox", { name: /nutrición/i }).check();
+  await page.getByRole("checkbox", { name: /nutrición/i }).click();
+  await page.getByRole("button", { name: "Dictar", exact: true }).waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll("button")].some((b) => b.textContent === "Dictar" && !b.disabled));
   const send = page.getByRole("button", { name: "Enviar", exact: true });
   await page.getByRole("button", { name: "Dictar", exact: true }).click();
   await page.waitForFunction(() => document.querySelector('textarea[aria-label="Mensaje para el asistente"]')?.value.includes("mi nevera"));
@@ -77,3 +79,4 @@ try {
   await browser?.close();
   try { process.kill(-server.pid, "SIGKILL"); } catch { /* ya terminado */ }
 }
+
