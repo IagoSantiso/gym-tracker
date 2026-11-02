@@ -53,7 +53,17 @@ export async function callOpenAI({ items, tools }: ProviderInput): Promise<Provi
       model: res.model,
     };
   } catch (e) {
-    if (e instanceof OpenAI.RateLimitError) throw new ProviderError(429, "El proveedor de IA está saturado. Inténtalo en un momento.");
+    if (e instanceof OpenAI.APIError) {
+      // Diagnóstico técnico sin contenido del usuario
+      console.warn(JSON.stringify({ route: "ai/openai", status: e.status ?? null, code: e.code ?? null, type: e.type ?? null }));
+    }
+    if (e instanceof OpenAI.RateLimitError) {
+      if (e.code === "insufficient_quota") throw new ProviderError(402, "Tu cuenta de OpenAI no tiene saldo para la API (la suscripción de ChatGPT no la incluye). Añade crédito en platform.openai.com → Settings → Billing y vuelve a intentarlo.");
+      throw new ProviderError(429, "OpenAI ha limitado las peticiones de tu cuenta (límite de uso del modelo). Espera un minuto o usa un modelo con más margen en OPENAI_MODEL.");
+    }
+    if (e instanceof OpenAI.NotFoundError || (e instanceof OpenAI.BadRequestError && /model/i.test(e.message))) {
+      throw new ProviderError(502, `El modelo configurado (${process.env.OPENAI_MODEL ?? "por defecto"}) no está disponible para tu cuenta de OpenAI. Revisa OPENAI_MODEL en Vercel.`);
+    }
     if (e instanceof OpenAI.AuthenticationError) throw new ProviderError(500, "Credenciales de IA no válidas en el servidor.");
     if (e instanceof OpenAI.APIConnectionError) throw new ProviderError(504, "No se pudo contactar con el proveedor de IA.");
     if (e instanceof OpenAI.APIError) throw new ProviderError(502, `Error del proveedor de IA (${e.status ?? "?"}).`);

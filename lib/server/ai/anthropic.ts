@@ -63,7 +63,8 @@ export async function callAnthropic({ items, tools }: ProviderInput): Promise<Pr
       model: res.model,
     };
   } catch (e) {
-    if (e instanceof Anthropic.RateLimitError) throw new ProviderError(429, "El proveedor de IA está saturado. Inténtalo en un momento.");
+    if (e instanceof Anthropic.APIError) console.warn(JSON.stringify({ route: "ai/anthropic", status: e.status ?? null, type: (e.error as { error?: { type?: string } } | undefined)?.error?.type ?? null }));
+    if (e instanceof Anthropic.RateLimitError) throw new ProviderError(429, "Anthropic ha limitado las peticiones de tu cuenta. Espera un minuto y vuelve a intentarlo.");
     if (e instanceof Anthropic.AuthenticationError) throw new ProviderError(500, "Credenciales de IA no válidas en el servidor.");
     if (e instanceof Anthropic.BadRequestError) throw new ProviderError(400, "La petición a la IA no es válida (revisa la configuración del modelo).");
     if (e instanceof Anthropic.APIConnectionError) throw new ProviderError(504, "No se pudo contactar con el proveedor de IA.");
