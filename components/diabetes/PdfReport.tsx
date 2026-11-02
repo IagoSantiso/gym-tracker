@@ -15,7 +15,7 @@ export function PdfReportMetrics({ summary: s, unit = "mg/dL" }: { summary: Summ
   const low = value(s, "rangeLowMgdl"), high = value(s, "rangeHighMgdl");
   const veryLow = value(s, "veryLowMgdl"), veryHigh = value(s, "veryHighMgdl");
   return <>
-    <p className="small"><b>Periodo del informe:</b> {s.periodStartDate && s.periodEndDate ? `${formatDateEs(String(s.periodStartDate))} – ${formatDateEs(String(s.periodEndDate))}` : s.periodText || "No reconocido"}</p>
+    <p className="small"><b>Periodo del informe:</b> {s.periodStartDate && s.periodEndDate ? `${formatDateEs(String(s.periodStartDate), { day: "numeric", month: "short", year: "numeric" })} – ${formatDateEs(String(s.periodEndDate), { day: "numeric", month: "short", year: "numeric" })}` : s.periodText || "No reconocido"}</p>
     <div className="grid g3">
       <Kpi value={mean == null ? "No consta" : formatGlucose(mean, unit)} label="glucosa media del informe" source="imported" />
       <Kpi value={pct(value(s, "pctInRange"))} label="tiempo en rango del informe" source="imported" />
