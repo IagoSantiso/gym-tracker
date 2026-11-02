@@ -1,5 +1,5 @@
 /** Plan semanal: generación, propuestas (aplicar / rechazar / revertir) y estado. */
-import { tbl } from "@/lib/db/db";
+import { getDb, tbl } from "@/lib/db/db";
 import { active, all, audit, bulkPut, nowIso, patch, put, remove } from "@/lib/db/repo";
 import type { PlannedItem, Proposal, ProposalOp, RunSpec, TableName } from "@/lib/db/types";
 import { GENERATOR_VERSION, generateWeek } from "@/lib/domain/planning/generator";
@@ -124,8 +124,12 @@ export async function acceptProposal(id: string): Promise<{ ok: boolean; error?:
     created.push(rid);
     return { ...o, record: { ...o.record, id: rid } };
   });
-  await applyOps(ops);
-  await patch("proposals", id, { status: "accepted", decidedAt: nowIso(), inverse: inverseFor(p, created) });
+  const db = getDb();
+  const tables = [...new Set([...ops.map((o) => o.table), "proposals", "outbox"])];
+  await db.transaction("rw", tables.map((t) => db.table(t)), async () => {
+    await applyOps(ops);
+    await patch("proposals", id, { status: "accepted", decidedAt: nowIso(), inverse: inverseFor(p, created) });
+  });
   await afterMealChanges(ops);
   await audit("proposal_accepted", { kind: p.kind, origin: p.origin });
   return { ok: true };

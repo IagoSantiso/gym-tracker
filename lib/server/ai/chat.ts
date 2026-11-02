@@ -1,5 +1,6 @@
 import "server-only";
 /** Orquestación de una vuelta del chat: guardarraíles de entrada, proveedor, validación y guardarraíles de salida. */
+import { AttachmentSchema, MAX_ATTACHMENT_CHARS, attachmentSize } from "@/lib/ai/attachments";
 import { TOOLS, validateToolInput, type ChatRequest, type ChatResponse } from "@/lib/ai/tools";
 import { EMERGENCY_RESPONSE, blockedMessage, detectEmergency, scanDeep, scanOutput } from "@/lib/domain/safety/guardrails";
 import { callAnthropic, anthropicModel } from "./anthropic";
@@ -20,11 +21,31 @@ export function validateRequest(body: unknown): ChatRequest | string {
   const b = body as ChatRequest;
   if (!b || !Array.isArray(b.items) || !b.context) return "Petición mal formada.";
   if (b.items.length === 0 || b.items.length > 80) return "Conversación vacía o demasiado larga: empieza una nueva.";
+  let attachmentChars = 0;
   for (const it of b.items) {
     if (!it || !["user", "assistant", "tool"].includes(it.role)) return "Elemento de conversación no válido.";
     if (it.role === "user" && (typeof it.text !== "string" || it.text.length > 8000)) return "Mensaje demasiado largo.";
+    if (it.role === "user" && it.attachments !== undefined) {
+      if (!Array.isArray(it.attachments) || it.attachments.length > 4) return "Adjuntos no válidos: máximo 4 por mensaje.";
+      for (const input of it.attachments) {
+        const parsed = AttachmentSchema.safeParse(input);
+        if (!parsed.success) return "Adjunto no válido o demasiado grande.";
+        const a = parsed.data;
+        attachmentChars += attachmentSize(a);
+        if (a.kind !== "text") {
+          const bytes = Buffer.from(a.data, "base64");
+          if (bytes.toString("base64") !== a.data) return "Codificación de adjunto no válida.";
+          const valid = a.kind === "pdf" ? bytes.subarray(0, 5).toString() === "%PDF-"
+            : a.mediaType === "image/jpeg" ? bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255
+            : a.mediaType === "image/png" ? bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a"
+            : bytes.subarray(0, 4).toString() === "RIFF" && bytes.subarray(8, 12).toString() === "WEBP";
+          if (!valid) return "El contenido del archivo no corresponde a su formato.";
+        }
+      }
+    }
     if (it.role === "tool" && (!Array.isArray(it.results) || it.results.some((r) => typeof r.content !== "string" || r.content.length > 60_000))) return "Resultado de herramienta no válido.";
   }
+  if (attachmentChars > MAX_ATTACHMENT_CHARS) return "Los adjuntos de esta conversación ocupan demasiado. Empieza una nueva con menos archivos.";
   return b;
 }
 

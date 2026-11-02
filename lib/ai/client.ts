@@ -4,6 +4,7 @@ import { getMeta, setMeta, tbl } from "@/lib/db/db";
 import { all, nowIso, put } from "@/lib/db/repo";
 import { localDate, WEEKDAYS_ES, weekdayOf } from "@/lib/domain/time";
 import { accessToken } from "@/lib/sync/supabase";
+import { MAX_CHAT_BODY_BYTES, type ChatAttachment } from "./attachments";
 import type { ChatItem, ChatRequest, ChatResponse } from "./tools";
 import { executeTool } from "./client-tools";
 import type { ConsentKind } from "@/lib/db/types";
@@ -30,10 +31,10 @@ async function context(): Promise<ChatRequest["context"]> {
   return { today: localDate(), timezone: p?.timezone ?? "Europe/Madrid", consents, unit: d?.unit ?? "mg/dL" };
 }
 
-export async function userItem(text: string, first: boolean): Promise<ChatItem> {
-  if (!first) return { role: "user", text };
+export async function userItem(text: string, first: boolean, attachments: ChatAttachment[] = []): Promise<ChatItem> {
+  if (!first) return { role: "user", text, attachments };
   const c = await context();
-  return { role: "user", text: `[Contexto de la app — hoy ${WEEKDAYS_ES[weekdayOf(c.today)]} ${c.today}; zona ${c.timezone}; unidad de glucosa del usuario ${c.unit}]\n\n${text}` };
+  return { role: "user", attachments, text: `[Contexto de la app — hoy ${WEEKDAYS_ES[weekdayOf(c.today)]} ${c.today}; zona ${c.timezone}; unidad de glucosa del usuario ${c.unit}]\n\n${text}` };
 }
 
 export interface TurnUpdate {
@@ -47,12 +48,17 @@ export async function runConversation(items: ChatItem[], onUpdate: (u: TurnUpdat
   for (let step = 0; step < 8; step++) {
     const token = await accessToken();
     const code = token ? null : await getAccessCode();
+    const body = JSON.stringify({ items: cur, context: await context() } satisfies ChatRequest);
+    if (new Blob([body]).size > MAX_CHAT_BODY_BYTES) {
+      onUpdate({ items: cur, error: "Esta conversación ocupa demasiado: empieza una nueva o quita adjuntos." });
+      return cur;
+    }
     let res: Response;
     try {
       res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : code ? { "X-Nexo-Access": code } : {}) },
-        body: JSON.stringify({ items: cur, context: await context() } satisfies ChatRequest),
+        body,
       });
     } catch {
       onUpdate({ items: cur, error: "Sin conexión: el asistente necesita red. El resto de la app funciona sin ella." });
@@ -84,4 +90,11 @@ export async function runConversation(items: ChatItem[], onUpdate: (u: TurnUpdat
     onUpdate({ items: cur });
   }
   return cur;
+}
+
+/** Los archivos solo viven en memoria durante la sesión; nunca van a backup ni sync. */
+export function conversationForStorage(items: ChatItem[]): ChatItem[] {
+  return items.map((it) => it.role === "user" && it.attachments?.length ? {
+    role: "user", text: `${it.text}\n\n[Adjuntos no conservados: ${it.attachments.map((a) => a.name).join(", ")}. Para volver a analizarlos, adjúntalos de nuevo.]`,
+  } : it);
 }

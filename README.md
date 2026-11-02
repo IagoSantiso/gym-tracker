@@ -39,6 +39,9 @@ CI en `.github/workflows/ci.yml`.
 2. (Opcional) Supabase: aplicar `supabase/migrations/*.sql`, activar magic link, definir `NEXT_PUBLIC_SUPABASE_*`, desactivar registros públicos tras crear tu usuario.
 3. (Opcional) IA: `ANTHROPIC_API_KEY` (+ `ALLOWED_EMAILS`). Polar: `POLAR_CLIENT_ID/SECRET/REDIRECT_URI` + `TOKEN_ENCRYPTION_KEY`.
 
+## Fotos y voz en el asistente
+Puedes adjuntar fotos de tu nevera o de etiquetas, PDF y archivos de texto; también dictar en navegadores compatibles. El asistente puede proponer productos nuevos y usarlos en una comida, con aprobación antes de guardar. [Formatos, privacidad y uso](docs/ASSISTANT_INPUTS.md).
+
 ## Documentación
 [Visión](docs/PRODUCT_VISION.md) · [Arquitectura](docs/ARCHITECTURE.md) · [Modelo de datos](docs/DATA_MODEL.md) · [Seguridad y privacidad](docs/SAFETY_AND_PRIVACY.md) · [Integraciones](docs/INTEGRATIONS.md) · [Roadmap](docs/ROADMAP.md) · [Decisiones](docs/DECISIONS.md) · [Estado](PROJECT_STATUS.md) · [Prompt maestro (Claude)](docs/PROMPT_MAESTRO_CLAUDE.md)
 

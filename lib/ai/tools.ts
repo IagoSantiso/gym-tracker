@@ -5,6 +5,8 @@
  * Ningún esquema contiene campos de insulina, dosis, ratios ni umbrales clínicos.
  */
 import { z } from "zod";
+import { NewProduct } from "./food-product";
+import type { ChatAttachment } from "./attachments";
 import type { ConsentKind } from "@/lib/db/types";
 
 export const Meta = z.strictObject({
@@ -111,6 +113,7 @@ const ItemEstimate = z.strictObject({
 });
 
 export const LogMealEstimate = z.strictObject({
+  new_products: z.array(NewProduct).max(12).nullable().optional(),
   date: DateStr.nullable(),
   time_hhmm: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
   slot: Slot,
@@ -125,7 +128,11 @@ export const LogMealEstimate = z.strictObject({
   meta: Meta,
 });
 
+export const ProposeFoodProducts = z.strictObject({ products: z.array(NewProduct).min(1).max(12), meta: Meta });
+
 export const MealVariant = z.strictObject({
+  steps: z.array(z.string().min(1).max(300)).min(1).max(10).nullable().optional(),
+  new_products: z.array(NewProduct).max(12).nullable().optional(),
   date: DateStr,
   slot: Slot,
   name: z.string().max(80),
@@ -152,6 +159,7 @@ export interface ToolDef {
 }
 
 export const TOOLS: ToolDef[] = [
+  { name: "propose_food_products", kind: "write", consent: "ai_nutrition", schema: ProposeFoodProducts, description: "Propone guardar productos nuevos de etiqueta, datos del usuario o estimación explícita. Valores POR 100 g, procedencia y base escurrido/tal cual. No se guardan hasta aceptar. Si se usarán en una comida usa propose_meal_variant.new_products para crear productos y cena en una sola propuesta." },
   { name: "get_user_profile_summary", kind: "read", consent: "ai_assistant", schema: Empty, description: "Resumen del perfil: objetivos, preferencias, experiencia, disponibilidad semanal y material. Sin datos clínicos." },
   { name: "get_training_history", kind: "read", consent: "ai_training", schema: Days, description: "Sesiones de fuerza (por ejercicio: mejor peso, reps, e1RM estimado) y de resistencia de los últimos N días." },
   { name: "get_weekly_schedule", kind: "read", consent: "ai_training", schema: WeekOffset, description: "Plan semanal vigente (con ids de cada elemento, estado e intensidad), plan original y reglas que incumple. week_offset 0 = esta semana." },
@@ -162,8 +170,8 @@ export const TOOLS: ToolDef[] = [
   { name: "get_cgm_period_summary", kind: "read", consent: "ai_cgm", schema: Days, description: "Métricas AGREGADAS de glucosa del periodo (TIR/TBR/TAR, media, CV, GMI si procede, cobertura, episodios) y observaciones descriptivas. Nunca lecturas individuales." },
   { name: "get_recovery_summary", kind: "read", consent: "ai_notes", schema: Days, description: "Check-ins de recuperación percibida (sueño, energía, fatiga, dolor) y notas del usuario." },
   { name: "get_day_balance", kind: "read", consent: "ai_nutrition", schema: DateOnly, description: "Balance nutricional de un día (date null = hoy): lo registrado, lo que queda del menú (con meal ids, recetas y gramos por ingrediente), rangos objetivo (energía, proteína, grasa, hidratos pautados si existen), estado y opciones deterministas para reajustar lo que queda. Úsala antes de proponer cambios del día." },
-  { name: "log_meal_estimate", kind: "write", consent: "ai_nutrition", schema: LogMealEstimate, description: "Propone REGISTRAR lo que el usuario dice que ha comido (pendiente de su aprobación). Usa food_id de get_food_inventory cuando exista (la app calcula con su base de datos) y estimate solo para lo que no exista (p. ej. bollería de un bar): valores aproximados por la cantidad indicada, coherentes (kcal ≈ 4·prot + 4·hidratos + 9·grasa). replaces_planned_meal=true si sustituye a la comida prevista en ese hueco. Nunca incluyas insulina." },
-  { name: "propose_meal_variant", kind: "write", consent: "ai_nutrition", schema: MealVariant, description: "Propone cambiar los INGREDIENTES de una comida prevista (fecha + hueco) por otros que el usuario tiene, con food_id existentes y gramos. La app calcula nutrientes y avisa si cambian los hidratos de esa comida. Pendiente de aprobación." },
+  { name: "log_meal_estimate", kind: "write", consent: "ai_nutrition", schema: LogMealEstimate, description: "Propone REGISTRAR lo que el usuario dice que ha comido (pendiente de su aprobación). Usa food_id de get_food_inventory cuando exista (la app calcula con su base de datos) o claves new:xxx de new_products si dispones de una etiqueta nueva; usa estimate solo para lo que no exista (p. ej. bollería de un bar): valores aproximados por la cantidad indicada, coherentes (kcal ≈ 4·prot + 4·hidratos + 9·grasa). replaces_planned_meal=true si sustituye a la comida prevista en ese hueco. Nunca incluyas insulina." },
+  { name: "propose_meal_variant", kind: "write", consent: "ai_nutrition", schema: MealVariant, description: "Propone cambiar los INGREDIENTES de una comida prevista (fecha + hueco) por otros que el usuario tiene, con food_id existentes y gramos, o new_products con claves new:xxx referenciadas como food_id en ingredients. Admite etiquetas de productos nuevos y crea productos + receta + cambio de cena en una sola propuesta. La app calcula nutrientes y avisa si cambian los hidratos de esa comida. Pendiente de aprobación." },
   { name: "propose_compensation_activity", kind: "write", consent: "ai_training", schema: CompensationChoice, description: "Propone añadir HOY al plan la actividad suave de compensación calculada por la app (get_day_balance → compensation): walk_incline = caminar en cinta con inclinación, easy_jog = trote suave. Minutos e intensidad los fija la app (máx. 30 min, suave). Solo si compensation no es null y el usuario lo quiere. Pendiente de aprobación." },
   { name: "propose_schedule_changes", kind: "write", consent: "ai_training", schema: ProposeSchedule, description: "Crea una PROPUESTA (no aplica nada) de cambios al plan semanal usando ids de get_weekly_schedule. Respeta: no dos días duros seguidos, al menos un descanso, no recuperar sesiones acumulando volumen." },
   { name: "draft_training_plan", kind: "write", consent: "ai_training", schema: TrainingPlanDraft, description: "Crea un BORRADOR de rutina de fuerza con ejercicios de la biblioteca (exercise_id existentes). Queda pendiente de aprobación." },
@@ -199,7 +207,7 @@ export interface ToolCall {
 }
 
 export type ChatItem =
-  | { role: "user"; text: string }
+  | { role: "user"; text: string; attachments?: ChatAttachment[] }
   | { role: "assistant"; text: string; toolCalls: ToolCall[]; provider: string; raw: unknown; guardrail?: boolean }
   | { role: "tool"; results: { id: string; name: string; content: string; isError?: boolean; display?: unknown }[] };
 
@@ -222,7 +230,11 @@ export function strictSchema(schema: Record<string, unknown>): Record<string, un
   const DROP = new Set(["minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "pattern", "minItems", "maxItems"]);
   const walk = (v: unknown): unknown => {
     if (Array.isArray(v)) return v.map(walk);
-    if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).filter(([k]) => !DROP.has(k)).map(([k, x]) => [k, walk(x)]));
+    if (v && typeof v === "object") {
+      const out = Object.fromEntries(Object.entries(v).filter(([k]) => !DROP.has(k)).map(([k, x]) => [k, walk(x)]));
+      if (out.properties && typeof out.properties === "object") out.required = Object.keys(out.properties);
+      return out;
+    }
     return v;
   };
   return walk(schema) as Record<string, unknown>;
