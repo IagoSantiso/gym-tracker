@@ -33,10 +33,11 @@ export function DiabetesPage() {
   const p = useProfile();
   const pdfReports = useLive(() => agpPdfReports(), []) ?? [];
   const [days, setDays] = useState(14);
+  const [referenceNow] = useState(() => Date.now());
   const [quick, setQuick] = useState<QuickKind>(null);
   const last = useLive(async () => (await tbl("cgm_readings").orderBy("ts").reverse().filter((x) => active(x) && x.kind === "historic").first()) ?? null, []);
   const ranges: Ranges = { veryLow: d.veryLow, low: d.targetLow, high: d.targetHigh, veryHigh: d.veryHigh };
-  const endMs = last ? Date.parse(last.ts) + 60000 : Date.now();
+  const endMs = last ? Date.parse(last.ts) + 60000 : referenceNow;
   const startMs = endMs - days * 864e5;
   const readings = useLive(() => readingsBetween(startMs - 864e5 * days, endMs), [startMs, endMs, days]);
   const ageH = last ? (Date.now() - Date.parse(last.ts)) / 36e5 : null;
@@ -323,7 +324,7 @@ function ImportView({ tz }: { tz: string }) {
           <ActionButton className="btn primary" onRun={async () => {
             setBusy(true);
             try {
-              const result = await saveAgpPdfImport(pdf, { ...pdfFile, keepRaw, timezone: zone });
+              const result = await saveAgpPdfImport(pdf, { ...pdfFile, keepRaw, timezone: tz });
               setPdf(null); setPdfFile(null);
               return result.duplicate ? "El PDF ya estaba importado: no se ha duplicado" : "Informe PDF guardado. Ya puedes verlo en Resumen";
             } finally { setBusy(false); }
