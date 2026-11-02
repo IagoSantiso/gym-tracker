@@ -6,7 +6,7 @@ import { eligibleRecipes } from "@/lib/domain/nutrition/menu";
 import { localDate } from "@/lib/domain/time";
 import type { FoodLog } from "@/lib/db/types";
 import { loadCatalog, type Catalog } from "./nutrition";
-import { compensationOption, energyDay, enduranceKcal, strengthKcal, type CompensationOption, type EnergyDay } from "@/lib/domain/nutrition/energy";
+import { compensationOption, energyDay, enduranceKcal, sessionSteps, strengthKcal, type CompensationOption, type EnergyDay } from "@/lib/domain/nutrition/energy";
 import { SPORT_LABEL } from "@/lib/domain/training/endurance";
 import { currentTargets } from "./targets";
 
@@ -64,7 +64,8 @@ export async function loadDayBalance(date = localDate(), cat?: Catalog): Promise
   const tdeeMid = ct.estimate?.ok && ct.estimate.tdee ? (ct.estimate.tdee[0] + ct.estimate.tdee[1]) / 2 : null;
   const targetDeficit = ct.mode === "manual" && ct.kcal && tdeeMid ? Math.max(0, tdeeMid - ct.kcal[0]) : ct.estimate?.deficitKcal ?? 0;
   const energy = energyDay({
-    weightKg: kg, bmrMid: bmr, steps: Math.max(0, ...act.map((a) => a.steps ?? 0)) || null, exercise: exerciseToday,
+        // pasos del día sin los de las sesiones a pie ya contadas como ejercicio (evita doble conteo)
+    weightKg: kg, bmrMid: bmr, steps: Math.max(0, Math.max(0, ...act.map((a) => a.steps ?? 0)) - end.reduce((a, e) => a + sessionSteps(e), 0)) || null, exercise: exerciseToday,
     intakeKcal: b.consumed.kcal, plannedRestKcal: b.plannedRest.kcal, targetDeficit,
   });
   const compensation = energy.ok && energy.verdict === "over" && kg ? compensationOption({

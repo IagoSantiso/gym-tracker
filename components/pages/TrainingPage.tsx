@@ -219,7 +219,7 @@ function CardioTab({ onAdd }: { onAdd: () => void }) {
                     {s.treadmillSpeedKmh ? ` · ${s.treadmillSpeedKmh} km/h ${s.treadmillInclinePct ?? 0} %` : ""}
                     {kg ? ` · ~${Math.round(enduranceKcal(s, kg) / 10) * 10} kcal` : ""}
                   </div>
-                  {s.whileWorking && <button className="link-btn xs" onClick={() => void patch("endurance_sessions", s.id, { whileWorking: false }).then(() => toast("Corregido: ya no cuenta como teletrabajo"))}>¿No era en cinta de escritorio? Corregir</button>}
+                  {s.whileWorking && <button className="link-btn xs" onClick={() => void patch("endurance_sessions", s.id, { whileWorking: false }).then(() => toast("Corregido: ya no figura como cinta de escritorio"))}>¿No era en cinta de escritorio? Corregir</button>}
                 </div>
                 <SourceBadge source={s.source} />
                 <button className="icon-btn" aria-label="Borrar actividad" onClick={() => confirmAction("¿Borrar esta actividad?") && void remove("endurance_sessions", s.id)}><Icon name="trash" /></button>

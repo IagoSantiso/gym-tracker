@@ -48,12 +48,22 @@ export function enduranceKcal(s: Pick<EnduranceSession, "sport" | "durationSec" 
   const h = s.durationSec / 3600;
   let met = MET[s.sport]?.[level(s.rpe)] ?? 4;
   if ((s.sport === "treadmill" || s.sport === "walk") && s.treadmillSpeedKmh) met = treadmillMet(s.treadmillSpeedKmh, s.treadmillInclinePct ?? 0);
-  if (s.whileWorking) met = Math.min(met, 3);
+  // Cinta de escritorio: también suma. Con velocidad, la fórmula ya refleja el ritmo bajo;
+  // sin velocidad, se asume paseo lento (~2,5 km/h ≈ 2,5 MET).
+  else if (s.whileWorking) met = 2.5;
   return Math.max(0, (met - 1) * kg * h);
 }
 
 /** kcal netas de una sesión de fuerza (MET ~5 con descansos). */
 export const strengthKcal = (minutes: number, kg: number) => Math.max(0, (5 - 1) * kg * (minutes / 60));
+
+/** Pasos aproximados de una sesión a pie (para no contarlos dos veces si el reloj ya suma pasos del día). */
+export function sessionSteps(s: Pick<EnduranceSession, "sport" | "durationSec" | "distanceM" | "treadmillSpeedKmh" | "steps">): number {
+  if (s.steps) return s.steps;
+  if (!["walk", "treadmill", "run"].includes(s.sport)) return 0;
+  const km = s.distanceM ? s.distanceM / 1000 : s.treadmillSpeedKmh ? (s.treadmillSpeedKmh * s.durationSec) / 3600 : 0;
+  return Math.round(km * (s.sport === "run" || (s.treadmillSpeedKmh ?? 0) >= 7 ? 1000 : 1300));
+}
 
 export interface EnergyDayInput {
   weightKg: number | null;

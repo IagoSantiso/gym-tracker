@@ -307,7 +307,7 @@ function ActivityModal({ onClose }: { onClose: () => void }) {
           <Field label="RPE (0–10)" hint="Esfuerzo percibido"><NumInput value={rpe} onChange={setRpe} min={0} max={10} ariaLabel="RPE" /></Field>
         </div>
         {sport === "treadmill" && (
-          <label className="switch"><input type="checkbox" checked={working} onChange={(e) => setWorking(e.target.checked)} /><span>En cinta de escritorio mientras teletrabajaba <span className="xs dim">(cuenta como actividad muy suave)</span></span></label>
+          <label className="switch"><input type="checkbox" checked={working} onChange={(e) => setWorking(e.target.checked)} /><span>En cinta de escritorio mientras teletrabajaba <span className="xs dim">(también suma: se calcula con tu velocidad e inclinación)</span></span></label>
         )}
         {sport !== "mobility" && (
           <div className="grid g3">

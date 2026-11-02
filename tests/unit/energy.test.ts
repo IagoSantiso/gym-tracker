@@ -37,3 +37,14 @@ describe("balance energético", () => {
     expect(compensationOption({ excess: 500, weightKg: 70, maxPct: 30, hardSessionToday: true, exerciseMinToday: 0, hasDiabetes: false })!.activities).toHaveLength(1);
   });
 });
+
+describe("cinta de escritorio", () => {
+  it("también suma, según velocidad; sin velocidad se asume paseo lento", async () => {
+    const { enduranceKcal, sessionSteps } = await import("@/lib/domain/nutrition/energy");
+    const desk = (speed: number | null) => enduranceKcal({ sport: "treadmill", durationSec: 3600, rpe: 2, treadmillSpeedKmh: speed, treadmillInclinePct: 0, whileWorking: true }, 75);
+    expect(desk(2)).toBeGreaterThan(50);
+    expect(desk(4)).toBeGreaterThan(desk(2));
+    expect(desk(null)).toBeGreaterThan(80);
+    expect(sessionSteps({ sport: "treadmill", durationSec: 3600, distanceM: null, treadmillSpeedKmh: 3, steps: null })).toBe(3900);
+  });
+});
