@@ -3,11 +3,13 @@
  * Ejecutores de herramientas del asistente en el CLIENTE (local-first): leen IndexedDB y devuelven
  * resúmenes mínimos; las de escritura crean PROPUESTAS validadas (nunca aplican cambios).
  */
+import { productRecord, type NewProduct } from "./food-product";
 import { tbl } from "@/lib/db/db";
 import { active, all } from "@/lib/db/repo";
 import type { ConsentKind, PlannedItem, ProposalOp } from "@/lib/db/types";
-import { TOOL_BY_NAME, validateToolInput, type ToolCall, type ProposeSchedule, type TrainingPlanDraft, type MealPlanDraft, type RecipeDraft, type SaveNote, type Alternatives, type Meta, type LogMealEstimate, type MealVariant, type CompensationChoice } from "./tools";
+import { TOOL_BY_NAME, validateToolInput, type ToolCall, type ProposeSchedule, type TrainingPlanDraft, type MealPlanDraft, type RecipeDraft, type SaveNote, type Alternatives, type Meta, type LogMealEstimate, type MealVariant, type CompensationChoice, type ProposeFoodProducts } from "./tools";
 import type { z } from "zod";
+import type { Food } from "@/lib/db/types";
 import { addDays, localDate, minutesOfDay, weekStartOf } from "@/lib/domain/time";
 import { summarizeByExercise } from "@/lib/domain/training/progression";
 import { LIBRARY, alternativesFor, findExercise } from "@/lib/domain/training/library";
@@ -204,7 +206,36 @@ const READ: Record<string, (input: never) => Promise<unknown>> = {
   },
 };
 
+/** Resuelve productos inline sin escribir nada hasta aceptar la propuesta. */
+async function prepareProducts(products: z.infer<typeof NewProduct>[]) {
+  const prefs = await tbl("preferences").get("me");
+  const excluded = [...(prefs?.allergies ?? []), ...(prefs?.intolerances ?? [])];
+  const records = new Map<string, Omit<Food, "createdAt" | "updatedAt">>();
+  const existing = await all("foods");
+  const ops: ProposalOp[] = [];
+  const warnings: string[] = [];
+  for (const { key, product: p } of products) {
+    if (records.has(key)) throw new Error(`Clave duplicada: ${key}`);
+    if (p.allergens.some((a) => excluded.includes(a))) throw new Error(`${p.name}: contiene un alérgeno excluido.`);
+    if (excluded.length && !p.allergens_known) throw new Error(`${p.name}: verifica los alérgenos de la etiqueta antes de usarlo.`);
+    const record = productRecord(p);
+    const same = existing.find((f) => f.name === record.name && f.state === record.state && f.carbBasis === record.carbBasis && JSON.stringify(f.per100) === JSON.stringify(record.per100) && f.notes === record.notes);
+    records.set(key, same ?? record);
+    if (!same) ops.push({ op: "create", table: "foods", record: { ...record } });
+    if (p.provenance === "estimated") warnings.push(`${record.name}: nutrientes estimados; no se han leído de una etiqueta.`);
+    if (!p.allergens_known) warnings.push(`${record.name}: alérgenos sin verificar.`);
+  }
+  return { records, ops, warnings };
+}
+
 async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
+  if (name === "propose_food_products") {
+    const x = input as z.infer<typeof ProposeFoodProducts>;
+    const batch = await prepareProducts(x.products);
+    if (!batch.ops.length) return { content: "Esos productos ya están guardados. Consulta get_food_inventory para usar sus ids." };
+    const r = await createProposal({ domain: "nutrition", kind: "ai_food_products", title: "Añadir productos al catálogo", summary: `${batch.ops.length} productos nuevos. Valores por 100 g; revisa la transcripción antes de aceptar.`, reasons: [...batch.records.values()].map((f) => `${f.name}: ${f.per100.kcal} kcal, ${f.per100.carbsAvailableG ?? f.per100.carbsTotalG} g hidratos (${f.carbBasis}), ${f.per100.proteinG} g proteína, ${f.per100.fatG} g grasa. ${f.notes}`), ...metaToProposal({ ...x.meta, warnings: [...x.meta.warnings, ...batch.warnings] }), ops: batch.ops, inverse: [], origin: "ai", requiresApproval: true, expiresAt: null });
+    return "error" in r ? { content: r.error, isError: true } : { content: `Productos propuestos (id ${r.id}). No guardados todavía: el usuario debe aceptar. Después consulta get_food_inventory.` };
+  }
   if (name === "propose_schedule_changes") {
     const x = input as z.infer<typeof ProposeSchedule>;
     const ids = x.changes.map((c) => c.item_id);
@@ -285,6 +316,9 @@ async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
   if (name === "log_meal_estimate") {
     const x = input as z.infer<typeof LogMealEstimate>;
     const cat = await loadCatalog();
+    const products = x.new_products ?? [];
+    if (products.some((p) => !x.items.some((i) => i.food_id === p.key))) return { content: "Hay productos nuevos sin utilizar en el registro.", isError: true };
+    const batch = await prepareProducts(products);
     const date = x.date ?? localDate();
     if (date > localDate()) return { content: "Solo se registran comidas ya hechas (hoy o días anteriores).", isError: true };
     let totals: NutrientTotals = EMPTY_TOTALS();
@@ -292,9 +326,10 @@ async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
     const lines: string[] = [];
     let estimated = false;
     for (const it of x.items) {
-      const food = it.food_id ? cat.food(it.food_id) : undefined;
+      const food = it.food_id ? (batch.records.get(it.food_id) ?? cat.food(it.food_id)) : undefined;
       if (it.food_id && !food) return { content: `food_id inexistente: ${it.food_id}. Usa get_food_inventory o pasa food_id null con estimate.`, isError: true };
       if (food) {
+        if ("source" in food && food.source === "estimated") estimated = true;
         totals = addTotals(totals, nutrientsFor(food, it.grams));
         items.push({ foodId: food.id, grams: Math.round(it.grams) });
         lines.push(`${it.description}: ${Math.round(it.grams)} g (${food.name}, calculado)`);
@@ -311,7 +346,7 @@ async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
     }
     const [hh, mm] = (x.time_hhmm ?? "").split(":").map(Number);
     const eatenAt = x.time_hhmm ? new Date(`${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`).toISOString() : date === localDate() ? new Date().toISOString() : new Date(`${date}T13:00:00`).toISOString();
-    const ops: ProposalOp[] = [{
+    const ops: ProposalOp[] = [...batch.ops, {
       op: "create", table: "food_logs",
       record: { date, eatenAt, slot: x.slot, mealEntryId: null, recipeId: null, servings: null, items, title: x.title, totals, source: estimated ? "estimated" : "calculated", note: estimated ? `Incluye valores estimados por el asistente: ${lines.filter((l) => l.includes("ESTIMADO")).join("; ").slice(0, 400)}` : null },
     }];
@@ -330,37 +365,43 @@ async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
     const fat = after.nutrients.find((n) => n.key === "fatG")!;
     const kcal = after.nutrients.find((n) => n.key === "kcal")!;
     const summary = `${Math.round(totals.kcal)} kcal · ${Math.round(totals.carbsAvailableG)} g hidratos disp. · ${Math.round(totals.proteinG)} g proteína · ${Math.round(totals.fatG)} g grasa${estimated ? " (incluye estimaciones)" : ""}. Previsión del día: ${Math.round(kcal.projected)} kcal, ${Math.round(fat.projected)} g grasa.`;
-    const warnings = [...x.meta.warnings, ...(estimated ? ["Valores estimados sin etiqueta: pueden desviarse bastante. No los uses como base para decisiones de insulina."] : [])];
+    const warnings = [...x.meta.warnings, ...batch.warnings, ...(estimated ? ["Valores estimados sin etiqueta: pueden desviarse bastante. No los uses como base para decisiones de insulina."] : [])];
     const r = await createProposal({ domain: "nutrition", kind: "ai_food_log", title: `Registrar: ${x.title}`, summary, reasons: lines.slice(0, 6), assumptions: x.meta.assumptions, dataUsed: x.meta.data_used, warnings, confidence: estimated ? "low" : x.meta.confidence, ops, inverse, origin: "ai", requiresApproval: true, expiresAt: null });
     return "error" in r ? { content: r.error, isError: true } : { content: `Registro propuesto (pendiente de aprobación). Calculado por la app: ${summary} Mensajes de la app: ${after.messages.join(" ")}` };
   }
   if (name === "propose_meal_variant") {
     const x = input as z.infer<typeof MealVariant>;
     const cat = await loadCatalog();
-    const bad = x.ingredients.filter((i) => !cat.food(i.food_id)).map((i) => i.food_id);
+    const products = x.new_products ?? [];
+    if (products.some((p) => !x.ingredients.some((i) => i.food_id === p.key))) return { content: "Hay productos nuevos sin utilizar en la receta.", isError: true };
+    const batch = await prepareProducts(products);
+    const food = (id: string) => batch.records.get(id) ?? cat.food(id);
+    const bad = x.ingredients.filter((i) => !food(i.food_id)).map((i) => i.food_id);
     if (bad.length) return { content: `food_id inexistentes: ${bad.join(", ")}. Usa get_food_inventory.`, isError: true };
     const pr = await tbl("preferences").get("me");
     const excluded = [...(pr?.allergies ?? []), ...(pr?.intolerances ?? [])];
-    const ings = x.ingredients.map((i) => ({ foodId: i.food_id, grams: i.grams, note: null }));
-    if (allergensOf(ings, cat.food).some((a) => excluded.includes(a))) return { content: "La variante contiene alérgenos o intolerancias excluidos por el usuario.", isError: true };
+    const ings = x.ingredients.map((i) => ({ foodId: food(i.food_id)!.id, grams: i.grams, note: null }));
+    const byId = (id: string) => [...batch.records.values()].find((f) => f.id === id) ?? cat.food(id);
+    if (allergensOf(ings, byId).some((a) => excluded.includes(a))) return { content: "La variante contiene alérgenos o intolerancias excluidos por el usuario.", isError: true };
     const e = (await tbl("meal_entries").where("date").equals(x.date).toArray()).filter(active).find((m) => m.slot === x.slot);
     if (!e) return { content: `No hay comida prevista el ${x.date} (${x.slot}). Usa get_day_balance.`, isError: true };
-    if (e.locked || e.status === "eaten") return { content: "Esa comida está bloqueada o ya hecha.", isError: true };
+    if (e.locked || e.status !== "planned") return { content: "Esa comida está bloqueada o ya hecha.", isError: true };
     const orig = cat.recipe(e.recipeId);
     const before = orig ? recipeNutrition(orig.ingredients, cat.food, e.servings, orig.servings).totals : EMPTY_TOTALS();
-    const t = recipeNutrition(ings, cat.food, 1, 1).totals;
+    const t = recipeNutrition(ings, byId, 1, 1).totals;
     const dCarbs = t.carbsAvailableG - before.carbsAvailableG;
     const rid = crypto.randomUUID();
-    const warnings = [...x.meta.warnings];
+    const warnings = [...x.meta.warnings, ...batch.warnings];
     if (Math.abs(dCarbs) > 10) warnings.push(`Esta variante cambia los hidratos de la comida en ${dCarbs > 0 ? "+" : ""}${Math.round(dCarbs)} g. Si sigues una pauta de hidratos o de insulina, revísalo con tu protocolo y tu equipo sanitario.`);
     const ops: ProposalOp[] = [
-      { op: "create", table: "recipes", record: { id: rid, name: x.name, slots: [x.slot], servings: 1, prepMin: orig?.prepMin ?? 10, cookMin: orig?.cookMin ?? 0, difficulty: 1, steps: orig?.steps ?? [], tags: ["ia", "variante"], batchFriendly: false, costLevel: 2, source: "ai_draft" } },
+      ...batch.ops,
+      { op: "create", table: "recipes", record: { id: rid, name: x.name, slots: [x.slot], servings: 1, prepMin: orig?.prepMin ?? 10, cookMin: orig?.cookMin ?? 0, difficulty: 1, steps: x.steps ?? ["Preparar los ingredientes en las cantidades indicadas y combinar para servir."], tags: ["ia", "variante"], batchFriendly: false, costLevel: 2, source: "ai_draft" } },
       ...ings.map((i, k): ProposalOp => ({ op: "create", table: "recipe_ingredients", record: { recipeId: rid, foodId: i.foodId, grams: i.grams, note: null, sortOrder: k } })),
       { op: "update", table: "meal_entries", id: e.id, changes: { recipeId: rid, servings: 1, replacedFrom: e.recipeId, status: "planned" } },
     ];
     const inverse: ProposalOp[] = [{ op: "update", table: "meal_entries", id: e.id, changes: { recipeId: e.recipeId, servings: e.servings, replacedFrom: e.replacedFrom ?? null, status: e.status } }];
     const summary = `Calculado por la app: ${Math.round(t.kcal)} kcal · ${Math.round(t.carbsAvailableG)} g hidratos disp. (${dCarbs >= 0 ? "+" : ""}${Math.round(dCarbs)} g) · ${Math.round(t.proteinG)} g proteína · ${Math.round(t.fatG)} g grasa (${t.fatG - before.fatG >= 0 ? "+" : ""}${Math.round(t.fatG - before.fatG)} g).`;
-    const r = await createProposal({ domain: "nutrition", kind: "ai_meal_variant", title: `Variante: ${x.name}`, summary, reasons: [x.reason], ...metaToProposal({ ...x.meta, warnings }), ops, inverse, origin: "ai", requiresApproval: true, expiresAt: null });
+    const r = await createProposal({ domain: "nutrition", kind: "ai_meal_variant", title: `Variante: ${x.name}`, summary, reasons: [x.reason, ...ings.map((i) => `${byId(i.foodId)!.name}: ${i.grams} g`), ...[...batch.records.values()].map((f) => `${f.name}: por 100 g ${f.per100.kcal} kcal, ${f.per100.carbsAvailableG ?? f.per100.carbsTotalG} g hidratos (${f.carbBasis}), ${f.per100.proteinG} g proteína, ${f.per100.fatG} g grasa. ${f.notes}`)], ...metaToProposal({ ...x.meta, warnings }), ops, inverse, origin: "ai", requiresApproval: true, expiresAt: null });
     return "error" in r ? { content: r.error, isError: true } : { content: `Variante propuesta (pendiente de aprobación). ${summary}${Math.abs(dCarbs) > 10 ? " AVISO: cambia los hidratos de la comida; dilo claramente al usuario." : ""}` };
   }
   if (name === "propose_compensation_activity") {

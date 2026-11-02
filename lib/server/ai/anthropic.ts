@@ -2,6 +2,7 @@ import "server-only";
 /** Adaptador Claude (Messages API, SDK oficial). Prompt de sistema cacheado, tools estrictas, fallback de servidor. */
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonSchemaFor, strictSchema, type ChatItem } from "@/lib/ai/tools";
+import { attachmentText } from "@/lib/ai/attachments";
 import { SYSTEM_PROMPT } from "./prompt";
 import { ProviderError, type ProviderInput, type ProviderResult } from "./types";
 
@@ -13,7 +14,15 @@ type Msg = Anthropic.Beta.BetaMessageParam;
 export function toAnthropicMessages(items: ChatItem[]): Msg[] {
   const out: Msg[] = [];
   for (const it of items) {
-    if (it.role === "user") out.push({ role: "user", content: it.text });
+    if (it.role === "user") {
+      const content: Anthropic.Beta.BetaContentBlockParam[] = [{ type: "text", text: it.text || "Analiza los adjuntos." }];
+      for (const a of it.attachments ?? []) {
+        if (a.kind === "text") content.push({ type: "text", text: attachmentText(a) });
+        else if (a.kind === "image") content.push({ type: "image", source: { type: "base64", media_type: a.mediaType, data: a.data } });
+        else content.push({ type: "document", title: a.name, source: { type: "base64", media_type: "application/pdf", data: a.data } });
+      }
+      out.push({ role: "user", content });
+    }
     else if (it.role === "assistant") {
       if (it.provider === "anthropic" && Array.isArray(it.raw)) out.push({ role: "assistant", content: it.raw as Anthropic.Beta.BetaContentBlockParam[] });
       else {

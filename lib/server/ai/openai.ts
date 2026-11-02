@@ -2,6 +2,7 @@ import "server-only";
 /** Adaptador alternativo OpenAI (Responses API, store: false). */
 import OpenAI from "openai";
 import { jsonSchemaFor, strictSchema, type ChatItem } from "@/lib/ai/tools";
+import { attachmentText } from "@/lib/ai/attachments";
 import { SYSTEM_PROMPT } from "./prompt";
 import { ProviderError, type ProviderInput, type ProviderResult } from "./types";
 
@@ -12,7 +13,15 @@ type InputItem = OpenAI.Responses.ResponseInputItem;
 export function toOpenAIInput(items: ChatItem[]): InputItem[] {
   const out: InputItem[] = [];
   for (const it of items) {
-    if (it.role === "user") out.push({ role: "user", content: it.text });
+    if (it.role === "user") {
+      const content: OpenAI.Responses.ResponseInputContent[] = [{ type: "input_text", text: it.text || "Analiza los adjuntos." }];
+      for (const a of it.attachments ?? []) {
+        if (a.kind === "text") content.push({ type: "input_text", text: attachmentText(a) });
+        else if (a.kind === "image") content.push({ type: "input_image", image_url: `data:${a.mediaType};base64,${a.data}`, detail: "high" });
+        else content.push({ type: "input_file", filename: a.name, file_data: `data:application/pdf;base64,${a.data}` });
+      }
+      out.push({ role: "user", content });
+    }
     else if (it.role === "assistant") {
       if (it.provider === "openai" && Array.isArray(it.raw)) out.push(...(it.raw as InputItem[]));
       else {

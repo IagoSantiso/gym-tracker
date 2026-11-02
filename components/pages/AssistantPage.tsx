@@ -1,5 +1,7 @@
 "use client";
 import Link from "next/link";
+import { ChatComposer } from "@/components/assistant/ChatComposer";
+import type { ChatAttachment } from "@/lib/ai/attachments";
 import { useEffect, useRef, useState } from "react";
 import { ActionButton, Card, Empty, Icon, Notice, PageHead, Toggle, useToast } from "@/components/ui";
 import { getSyncState, subscribeSync, syncNow, type SyncState } from "@/lib/sync/manager";
@@ -8,10 +10,9 @@ import { useLive, useTable } from "@/lib/db/hooks";
 import { tbl } from "@/lib/db/db";
 import { all, nowIso, put, remove } from "@/lib/db/repo";
 import { CONSENT_KINDS } from "@/lib/db/defaults";
-import { aiStatus, CONTEXT_RE, getAccessCode, runConversation, setAccessCode, userItem } from "@/lib/ai/client";
+import { aiStatus, conversationForStorage, CONTEXT_RE, getAccessCode, runConversation, setAccessCode, userItem } from "@/lib/ai/client";
 import type { ChatItem } from "@/lib/ai/tools";
 import type { ConsentKind } from "@/lib/db/types";
-import { asksForDosing } from "@/lib/domain/safety/guardrails";
 
 const SUGGESTIONS = [
   "He desayunado dos tostadas con café con leche y una tortilla de dos huevos: regístralo.",
@@ -31,7 +32,7 @@ const TOOL_LABEL: Record<string, string> = {
   get_nutrition_summary: "nutrición", get_cgm_period_summary: "glucosa (agregada)", get_recovery_summary: "recuperación",
   propose_schedule_changes: "propuesta de plan", draft_training_plan: "borrador de rutina", draft_meal_plan: "propuesta de menú",
   draft_recipe: "receta propuesta", draft_weekly_summary: "resumen semanal", save_user_note: "nota",
-  get_day_balance: "balance del día", log_meal_estimate: "registro de comida", propose_meal_variant: "variante de comida", propose_compensation_activity: "actividad de compensación",
+  propose_food_products: "productos nuevos", get_day_balance: "balance del día", log_meal_estimate: "registro de comida", propose_meal_variant: "variante de comida", propose_compensation_activity: "actividad de compensación",
 };
 
 export function AssistantPage() {
@@ -59,24 +60,27 @@ export function AssistantPage() {
   }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }); }, [items.length]);
 
-  const send = async (msg: string) => {
-    if (!msg.trim() || busy) return;
-    if (!ready) { toast("Completa los pasos de arriba para activar el asistente", "info"); return; }
+  const send = async (msg: string, attachments: ChatAttachment[] = []): Promise<boolean> => {
+    if ((!msg.trim() && !attachments.length) || busy) return false;
+    if (!ready) { toast("Completa los pasos de arriba para activar el asistente", "info"); return false; }
     setError(null);
     setBusy(true);
     const id = convId ?? crypto.randomUUID();
-    if (!convId) setConvId(id);
-    const base = [...items, await userItem(msg.trim(), items.length === 0)];
-    setItems(base);
-    setText("");
+    let sent = false;
     try {
+      const base = [...items, await userItem(msg.trim() || "Ayúdame con estos adjuntos.", items.length === 0, attachments)];
+      if (!convId) setConvId(id);
+      setItems(base);
+      setText("");
+      sent = true;
       const final = await runConversation(base, (u) => { setItems(u.items); if (u.error) setError(u.error); }, id);
-      await put("ai_conversations", { id, title: msg.trim().slice(0, 60), provider: status?.provider ?? "?", model: status?.model ?? "?", items: final });
+      await put("ai_conversations", { id, title: (msg.trim() || attachments.map((a) => a.name).join(", ")).slice(0, 60), provider: status?.provider ?? "?", model: status?.model ?? "?", items: conversationForStorage(final) });
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo completar la respuesta. Inténtalo de nuevo.");
     } finally {
       setBusy(false);
     }
+    return sent;
   };
 
   const [hasCode, setHasCode] = useState(false);
@@ -98,7 +102,7 @@ export function AssistantPage() {
   }, [ready]);
   return (
     <>
-      <PageHead eyebrow="Asistente" title="Pregunta sobre tus datos" actions={items.length ? <button className="btn ghost" onClick={() => { setItems([]); setConvId(null); setError(null); }}><Icon name="plus" />Nueva</button> : undefined}>
+      <PageHead eyebrow="Asistente" title="Pregunta sobre tus datos" actions={items.length ? <button className="btn ghost" disabled={busy} onClick={() => { setItems([]); setConvId(null); setError(null); setText(""); }}><Icon name="plus" />Nueva</button> : undefined}>
         Responde con tus datos reales mediante herramientas de solo lectura y crea propuestas que tú apruebas. Nunca da dosis de insulina ni indicaciones clínicas.
       </PageHead>
       {(!aiOn || !loginOk) && status !== null && (
@@ -162,18 +166,13 @@ export function AssistantPage() {
           <div className="stack">{pending.slice(0, 5).map((p) => <ProposalCard key={p.id} p={p} />)}</div>
         </section>
       )}
-      <form className="row" style={{ position: "sticky", bottom: "calc(var(--nav-h) + 12px)", marginTop: 16, background: "var(--bg)", padding: "8px 0", flexWrap: "nowrap" }}
-        onSubmit={(e) => { e.preventDefault(); if (asksForDosing(text)) toast("Recuerda: el asistente no puede indicar dosis ni correcciones."); void send(text); }}>
-        <textarea className="input" rows={2} value={text} disabled={busy} onChange={(e) => setText(e.target.value)} placeholder={ready ? "Escribe tu pregunta… (p. ej. «He desayunado… ajusta lo que queda del día»)" : "Completa los pasos de arriba para usar el asistente"} aria-label="Mensaje para el asistente"
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); } }} style={{ resize: "none" }} />
-        <button className="btn primary" disabled={!ready || busy || !text.trim()} type="submit" aria-label="Enviar" aria-busy={busy}>{busy ? <span className="spinner" aria-hidden /> : <Icon name="right" />}</button>
-      </form>
+      <ChatComposer text={text} setText={setText} busy={busy} ready={ready} conversationKey={convId ?? "new"} onSend={send} />
       {convs.length > 0 && (
         <Card title="Conversaciones guardadas en este dispositivo" className="no-print">
           <div className="list">
             {convs.map((c) => (
               <div className="li" key={c.id}>
-                <button className="grow" style={{ textAlign: "left" }} onClick={() => { setItems(c.items as ChatItem[]); setConvId(c.id); }}>
+                <button className="grow" style={{ textAlign: "left" }} disabled={busy} onClick={() => { setText(""); setError(null); setItems(c.items as ChatItem[]); setConvId(c.id); }}>
                   <div className="t">{c.title}</div><div className="s">{c.updatedAt.slice(0, 16).replace("T", " ")}</div>
                 </button>
                 <button className="icon-btn" aria-label="Borrar conversación" onClick={() => void remove("ai_conversations", c.id)}><Icon name="trash" /></button>
@@ -188,7 +187,11 @@ export function AssistantPage() {
 
 function Bubble({ it }: { it: ChatItem }) {
   if (it.role === "user") {
-    return <div className="card tight" style={{ alignSelf: "flex-end", maxWidth: "85%", background: "var(--lime-soft)", borderColor: "transparent" }}><div style={{ whiteSpace: "pre-wrap" }}>{it.text.replace(CONTEXT_RE, "")}</div></div>;
+    return <div className="card tight" style={{ alignSelf: "flex-end", maxWidth: "85%", background: "var(--lime-soft)", borderColor: "transparent" }}><div style={{ whiteSpace: "pre-wrap" }}>{it.text.replace(CONTEXT_RE, "")}</div>
+      {it.attachments?.map((a, i) => <div key={i} style={{ marginTop: 8 }}>
+        {a.kind === "image" ? <img src={`data:${a.mediaType};base64,${a.data}`} alt={a.name} style={{ maxWidth: "100%", maxHeight: 240, borderRadius: 8 }} /> : <span className="small">Adjunto: {a.name}</span>}
+      </div>)}
+    </div>;
   }
   if (it.role === "tool") {
     return (

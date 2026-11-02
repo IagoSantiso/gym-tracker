@@ -14,7 +14,7 @@
     "generate-precache": "node scripts/generate-precache.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "node tests/e2e/run.mjs",
+    "test:e2e": "node tests/e2e/run.mjs && node tests/e2e/assistant.mjs",
     "db:sql": "jiti scripts/generate-sql.ts",
     "lint": "tsc --noEmit && node scripts/check-safety.mjs",
     "import-exercises": "node scripts/import-exercises.mjs"

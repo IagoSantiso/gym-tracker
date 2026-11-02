@@ -121,6 +121,7 @@ export const PROPOSAL_WHITELIST: Record<string, string[] | "*"> = {
   workout_templates: "*",
   preferences: ["deloadActiveWeek", "adaptationMode", "deloadEveryWeeks"],
   goals: ["weightLossRatePct", "notes"],
+  foods: ["name", "brand", "barcode", "state", "per100", "carbBasis", "sourceId", "sourceRef", "retrievedAt", "section", "tags", "allergens", "notes", "source"],
   recipes: "*",
   recipe_ingredients: "*",
   user_notes: "*",

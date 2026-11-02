@@ -3,12 +3,11 @@ import { authorize } from "@/lib/server/auth";
 import { checkLimits, recordTokens } from "@/lib/server/ai/limits";
 import { aiConfigured, runChatTurn, validateRequest } from "@/lib/server/ai/chat";
 import { ProviderError } from "@/lib/server/ai/types";
+import { MAX_CHAT_BODY_BYTES } from "@/lib/ai/attachments";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
-
-const MAX_BODY = 400_000;
 
 export async function POST(req: Request) {
   if (!aiConfigured()) return NextResponse.json({ error: "El asistente no está configurado en este servidor. La app funciona igual sin él." }, { status: 503 });
@@ -16,8 +15,18 @@ export async function POST(req: Request) {
   if ("error" in who) return NextResponse.json({ error: who.error }, { status: who.status });
   const limited = checkLimits(who.key);
   if (limited) return NextResponse.json({ error: limited }, { status: 429 });
-  const raw = await req.text();
-  if (raw.length > MAX_BODY) return NextResponse.json({ error: "Conversación demasiado larga: empieza una nueva." }, { status: 413 });
+  if (Number(req.headers.get("content-length")) > MAX_CHAT_BODY_BYTES) return NextResponse.json({ error: "Reduce los adjuntos o empieza una conversación nueva." }, { status: 413 });
+  const reader = req.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (reader) while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_CHAT_BODY_BYTES) { await reader.cancel(); return NextResponse.json({ error: "Reduce los adjuntos o empieza una conversación nueva." }, { status: 413 }); }
+    chunks.push(value);
+  }
+  const raw = Buffer.concat(chunks).toString("utf8");
   let body: unknown;
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ error: "JSON no válido." }, { status: 400 }); }
   const parsed = validateRequest(body);
