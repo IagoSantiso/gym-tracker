@@ -48,3 +48,13 @@ describe("cinta de escritorio", () => {
     expect(sessionSteps({ sport: "treadmill", durationSec: 3600, distanceM: null, treadmillSpeedKmh: 3, steps: null })).toBe(3900);
   });
 });
+
+describe("día en curso", () => {
+  it("no marca «te quedas corto» mientras el día sigue abierto", async () => {
+    const { energyDay } = await import("@/lib/domain/nutrition/energy");
+    const base = { weightKg: 75, bmrMid: 1700, steps: null, exercise: [], plannedRestKcal: 0, targetDeficit: 400, intakeKcal: 600 };
+    expect(energyDay({ ...base, dayClosed: false }).verdict).toBe("in_progress");
+    expect(energyDay({ ...base, dayClosed: false }).message).toMatch(/te quedan/);
+    expect(energyDay({ ...base, dayClosed: true }).verdict).toBe("under");
+  });
+});

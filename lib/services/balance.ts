@@ -67,6 +67,7 @@ export async function loadDayBalance(date = localDate(), cat?: Catalog): Promise
         // pasos del día sin los de las sesiones a pie ya contadas como ejercicio (evita doble conteo)
     weightKg: kg, bmrMid: bmr, steps: Math.max(0, Math.max(0, ...act.map((a) => a.steps ?? 0)) - end.reduce((a, e) => a + sessionSteps(e), 0)) || null, exercise: exerciseToday,
     intakeKcal: b.consumed.kcal, plannedRestKcal: b.plannedRest.kcal, targetDeficit,
+    dayClosed: date < localDate() || (remaining.length === 0 && new Date().getHours() >= 21),
   });
   const compensation = energy.ok && energy.verdict === "over" && kg ? compensationOption({
     excess: energy.excess, weightKg: kg, maxPct: prefs?.compensationMaxPct ?? 30,

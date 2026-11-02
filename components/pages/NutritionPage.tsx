@@ -215,7 +215,7 @@ export function AdjustDayCard() {
   );
 }
 
-const VERDICT = { on_track: "Día en objetivo", over: "Por encima", under: "Te quedas corto", unknown: "" } as const;
+const VERDICT = { on_track: "Día en objetivo", over: "Por encima", under: "Te quedas corto", in_progress: "En curso", unknown: "" } as const;
 
 const STATUS_LABEL = { low: "por debajo", ok: "en rango", high: "por encima", unknown: "sin objetivo" } as const;
 
@@ -234,7 +234,7 @@ export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean 
     toast("Resto del día reajustado");
   };
   return (
-    <Card title="Balance del día" sub="Lo comido + lo que queda del menú, frente a tus rangos. Orientativo." right={b.energy.ok ? <span className={`badge ${b.energy.verdict === "on_track" ? "ok" : "warn"}`}>{VERDICT[b.energy.verdict]}</span> : undefined}>
+    <Card title="Balance del día" sub="Lo comido + lo que queda del menú, frente a tus rangos. Orientativo." right={b.energy.ok ? <span className={`badge ${b.energy.verdict === "on_track" ? "ok" : b.energy.verdict === "in_progress" ? "" : "warn"}`}>{VERDICT[b.energy.verdict]}</span> : undefined}>
       {b.energy.ok && (
         <div className="energy-box">
           <div className="energy-grid">

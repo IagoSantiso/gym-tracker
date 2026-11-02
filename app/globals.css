@@ -448,3 +448,16 @@ ul.small li::marker,ul[style*="padding-left"] li::marker,.card ul:not([class]) l
 .energy-grid small{font-size:11px;color:var(--muted);font-weight:700}
 .energy-grid b{font-size:20px;letter-spacing:-.02em}
 .comp-box{padding:12px;border-radius:12px;border:1px dashed var(--accent);margin-bottom:8px}
+.energy-kpi{display:grid;gap:8px;margin-top:10px;padding:14px;border-radius:16px;background:var(--panel);border:1px solid var(--line);color:var(--text)}
+.energy-kpi small{color:var(--muted);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.energy-kpi[data-v="on_track"]{border-color:var(--accent)}
+.energy-kpi[data-v="over"],.energy-kpi[data-v="under"]{border-color:var(--amber)}
+.ek-nums{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ek-nums>div{display:flex;flex-direction:column;min-width:0}
+.ek-nums b{font-size:22px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.ek-nums span{font-size:11px;color:var(--muted);line-height:1.3}
+.ek-bars{display:grid;gap:4px}
+.ek-bar{display:flex;height:8px;border-radius:99px;background:var(--panel2);overflow:hidden}
+.ek-bar.in i{background:var(--lime)}.ek-bar.in i.plan{background:color-mix(in srgb,var(--lime) 35%,transparent)}
+.ek-bar.out i{background:var(--info)}
+.energy-kpi[data-v="in_progress"]{border-color:var(--line2)}

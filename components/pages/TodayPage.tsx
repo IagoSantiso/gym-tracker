@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ActionButton, Card, Empty, Icon, Kpi, Notice, SourceBadge, useToast } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
 import { AdjustDayCard, BalanceCard, Portions } from "@/components/pages/NutritionPage";
+import { loadDayBalance, type DayBalanceView } from "@/lib/services/balance";
 import { ProposalCard } from "@/components/plan/ProposalCard";
 import { useDiabetes, useLive, useProfile } from "@/lib/db/hooks";
 import { tbl } from "@/lib/db/db";
@@ -54,6 +55,7 @@ export function TodayPage() {
     e: (await tbl("endurance_sessions").where("date").equals(today).toArray()).filter(active),
   }), [today]);
   const cat = useLive(() => loadCatalog(), []);
+  const bal = useLive(async () => (cat ? loadDayBalance(today, cat) : null), [cat, today]);
   const meals = useLive(async () => (await weekMeals(ws)).filter((m) => m.date === today || m.date === addDays(today, 1)), [ws, today]) ?? [];
   const logs = useLive(async () => (await tbl("food_logs").where("date").equals(today).toArray()).filter(active), [today]) ?? [];
   const shopping = useLive(async () => (await tbl("shopping_lists").where("weekStart").equals(ws).toArray()).find(active), [ws]);
@@ -91,6 +93,7 @@ export function TodayPage() {
           <div className="stat"><b>{Math.round(eaten.p)} g</b><small>proteína hoy{targets?.proteinG ? ` (rango ${targets.proteinG[0]}–${targets.proteinG[1]})` : ""}</small></div>
           <div className="stat"><b>{steps?.steps ? steps.steps.toLocaleString("es-ES") : "—"}</b><small>pasos{p.stepsGoal ? ` · referencia ${p.stepsGoal.toLocaleString("es-ES")}` : ""}</small></div>
         </div>
+        <EnergyKpi b={bal} />
       </section>
 
       {(!p.onboardingCompletedAt || p.draft) && (
@@ -206,3 +209,40 @@ export function TodayPage() {
     </>
   );
 }
+
+const VERDICT_TXT = { on_track: "Día en objetivo", over: "Por encima", under: "Te quedas corto", in_progress: "En curso", unknown: "" } as const;
+
+/** KPI de energía: consumido vs gastado estimado, con la previsión del día. */
+function EnergyKpi({ b }: { b: DayBalanceView | null | undefined }) {
+  if (!b) return null;
+  const e = b.energy;
+  if (!e.ok) {
+    return (
+      <Link href="/ajustes?tab=perfil" className="energy-kpi muted" style={{ textDecoration: "none" }}>
+        <small>Consumido vs gastado</small>
+        <span className="small">Completa peso, altura y fecha de nacimiento para estimar tu gasto.</span>
+      </Link>
+    );
+  }
+  const max = Math.max(e.spent, e.projectedIntake, 1);
+  const fmt = (n: number) => n.toLocaleString("es-ES");
+  return (
+    <Link href="/nutricion?tab=hoy" className="energy-kpi" data-v={e.verdict} style={{ textDecoration: "none" }} aria-label={`Consumido ${e.intake} kcal, gastado estimado ${e.spent} kcal. ${VERDICT_TXT[e.verdict]}`}>
+      <div className="row between" style={{ flexWrap: "nowrap", alignItems: "baseline" }}>
+        <small>Consumido vs gastado (kcal)</small>
+        <span className={`badge ${e.verdict === "on_track" ? "ok" : e.verdict === "in_progress" ? "" : "warn"}`}>{VERDICT_TXT[e.verdict]}</span>
+      </div>
+      <div className="ek-nums">
+        <div><b>{fmt(e.intake)}</b><span>consumido{e.projectedIntake > e.intake ? ` (+${fmt(e.projectedIntake - e.intake)} previsto)` : ""}</span></div>
+        <div><b>{fmt(e.spent)}</b><span>gastado (est.){e.exercise ? ` · ${fmt(e.exercise)} ejercicio` : ""}</span></div>
+        <div><b>{e.balance > 0 ? "+" : ""}{fmt(e.balance)}</b><span>balance ahora</span></div>
+      </div>
+      <div className="ek-bars" aria-hidden>
+        <div className="ek-bar in"><i style={{ width: `${(e.intake / max) * 100}%` }} /><i className="plan" style={{ width: `${((e.projectedIntake - e.intake) / max) * 100}%` }} /></div>
+        <div className="ek-bar out"><i style={{ width: `${(e.spent / max) * 100}%` }} /></div>
+      </div>
+      <span className="xs dim">{e.message}</span>
+    </Link>
+  );
+}
+
