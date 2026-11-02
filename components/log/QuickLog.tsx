@@ -1,6 +1,7 @@
 "use client";
 /** Modales de registro rápido. Todo se guarda primero en local; funcionan sin conexión. */
 import { useEffect, useMemo, useState } from "react";
+import { enduranceKcal } from "@/lib/domain/nutrition/energy";
 import { ActionButton, Field, Modal, Notice, NumInput, useToast } from "@/components/ui";
 import { nowIso, put } from "@/lib/db/repo";
 import { useDiabetes, useLive, useProfile } from "@/lib/db/hooks";
@@ -261,7 +262,7 @@ function ActivityModal({ onClose }: { onClose: () => void }) {
   const [speed, setSpeed] = useState<number | null>(5);
   const [incline, setIncline] = useState<number | null>(2);
   const [steps, setSteps] = useState<number | null>(null);
-  const [working, setWorking] = useState(true);
+  const [working, setWorking] = useState(false);
   const [shoeId, setShoeId] = useState("");
   const [notes, setNotes] = useState("");
   useEffect(() => {
@@ -276,9 +277,10 @@ function ActivityModal({ onClose }: { onClose: () => void }) {
       shoeId: sport === "run" && shoeId ? shoeId : null, plannedItemId: null, title: null, notes: notes.trim() || null, hrZonesSec: null,
       source: "manual", externalId: null, importId: null,
     });
-    const kindMap: Record<Sport, ("run" | "bike" | "walk" | "mobility")[]> = { run: ["run"], bike: ["bike"], walk: ["walk"], treadmill: ["walk"], mobility: ["mobility"], swim: [], other: [] };
+    const kindMap: Record<Sport, ("run" | "bike" | "walk" | "mobility")[]> = { run: ["run"], bike: ["bike"], walk: ["walk"], treadmill: (speed ?? 0) >= 7 ? ["run", "walk"] : ["walk", "run"], mobility: ["mobility"], swim: [], other: [] };
     if (kindMap[sport].length) await autoLinkPlanned(kindMap[sport], rec.id, "endurance_sessions", w.date);
-    toast("Actividad guardada");
+    const kg = (await all("weight_entries")).sort((a, b) => b.date.localeCompare(a.date))[0]?.weightKg;
+    toast(kg ? `Actividad guardada · ~${Math.round(enduranceKcal(rec, kg) / 10) * 10} kcal estimadas (cuentan en el balance del día)` : "Actividad guardada (añade tu peso para estimar el gasto)");
     onClose();
   };
   return (
@@ -305,7 +307,7 @@ function ActivityModal({ onClose }: { onClose: () => void }) {
           <Field label="RPE (0–10)" hint="Esfuerzo percibido"><NumInput value={rpe} onChange={setRpe} min={0} max={10} ariaLabel="RPE" /></Field>
         </div>
         {sport === "treadmill" && (
-          <label className="switch"><input type="checkbox" checked={working} onChange={(e) => setWorking(e.target.checked)} /><span>Mientras teletrabajaba</span></label>
+          <label className="switch"><input type="checkbox" checked={working} onChange={(e) => setWorking(e.target.checked)} /><span>En cinta de escritorio mientras teletrabajaba <span className="xs dim">(cuenta como actividad muy suave)</span></span></label>
         )}
         {sport !== "mobility" && (
           <div className="grid g3">

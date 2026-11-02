@@ -1,4 +1,5 @@
 "use client";
+import { enduranceKcal, strengthKcal } from "@/lib/domain/nutrition/energy";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Card, Empty, Field, Icon, Kpi, Modal, Notice, NumInput, PageHead, SourceBadge, Tabs, confirmAction, useTabParam, useToast } from "@/components/ui";
@@ -188,6 +189,7 @@ function CardioTab({ onAdd }: { onAdd: () => void }) {
   const g = useGoals();
   const toast = useToast();
   const sessions = useLive(async () => (await all("endurance_sessions")).sort((a, b) => b.startedAt.localeCompare(a.startedAt)), []) ?? [];
+  const kg = useLive(async () => (await all("weight_entries")).sort((a, b) => b.date.localeCompare(a.date))[0]?.weightKg ?? null, []);
   const shoes = useTable("shoes") ?? [];
   const [shoeName, setShoeName] = useState("");
   const [plan, setPlan] = useState({ distanceKm: g.raceGoal?.distanceKm ?? 10, weeks: 8, days: 3 });
@@ -215,7 +217,9 @@ function CardioTab({ onAdd }: { onAdd: () => void }) {
                     {s.distanceM && s.sport === "run" ? ` · ${formatPace(s.durationSec / (s.distanceM / 1000))}/km` : ""}
                     {s.avgHr ? ` · FC ${s.avgHr}` : ""}{s.rpe != null ? ` · RPE ${s.rpe}` : ""}{s.avgPowerW ? ` · ${s.avgPowerW} W` : ""}
                     {s.treadmillSpeedKmh ? ` · ${s.treadmillSpeedKmh} km/h ${s.treadmillInclinePct ?? 0} %` : ""}
+                    {kg ? ` · ~${Math.round(enduranceKcal(s, kg) / 10) * 10} kcal` : ""}
                   </div>
+                  {s.whileWorking && <button className="link-btn xs" onClick={() => void patch("endurance_sessions", s.id, { whileWorking: false }).then(() => toast("Corregido: ya no cuenta como teletrabajo"))}>¿No era en cinta de escritorio? Corregir</button>}
                 </div>
                 <SourceBadge source={s.source} />
                 <button className="icon-btn" aria-label="Borrar actividad" onClick={() => confirmAction("¿Borrar esta actividad?") && void remove("endurance_sessions", s.id)}><Icon name="trash" /></button>
@@ -275,34 +279,65 @@ function CardioTab({ onAdd }: { onAdd: () => void }) {
 }
 
 function HistoryTab() {
-  const sessions = useLive(async () => (await all("workout_sessions")).filter((s) => s.status === "completed").sort((a, b) => b.date.localeCompare(a.date) || b.startedAt.localeCompare(a.startedAt)), []) ?? [];
+  const sessions = useLive(async () => (await all("workout_sessions")).filter((s) => s.status === "completed"), []) ?? [];
+  const endurance = useLive(() => all("endurance_sessions"), []) ?? [];
   const sets = useLive(() => all("exercise_sets"), []) ?? [];
-  return sessions.length ? (
-    <Card>
-      <div className="list">
-        {sessions.slice(0, 40).map((s) => {
-          const ss = sets.filter((x) => x.sessionId === s.id && x.completed);
-          const ex = [...new Set(ss.map((x) => x.exerciseId))];
-          const vol = ss.reduce((a, x) => a + (x.weightKg ?? 0) * (x.reps ?? 0), 0);
-          return (
-            <details key={s.id} className="li" style={{ display: "block" }}>
-              <summary style={{ cursor: "pointer", listStyle: "none" }}>
-                <div className="row between">
-                  <div><div className="t">{s.title}</div><div className="s">{formatDateEs(s.date)} · {ss.length} series · {ex.length} ejercicios{vol ? ` · ${Math.round(vol).toLocaleString("es-ES")} kg vol.` : ""}{s.durationMin ? ` · ${s.durationMin} min` : ""}{s.rpe ? ` · RPE ${s.rpe}` : ""}{s.deload ? " · descarga" : ""}</div></div>
-                  <SourceBadge source={s.source} />
-                </div>
-              </summary>
-              <div className="small" style={{ padding: "8px 0" }}>
-                {ex.map((id) => <div key={id}><b>{findExercise(id)?.name ?? id}</b>: {ss.filter((x) => x.exerciseId === id).sort((a, b) => a.setIndex - b.setIndex).map((x) => `${x.weightKg ?? "PC"}×${x.reps ?? "?"}${x.rir != null ? ` @${x.rir}` : ""}`).join(" · ")}</div>)}
-                {s.notes && <div className="muted">Notas: {s.notes}</div>}
-                <button className="btn sm danger" style={{ marginTop: 6 }} onClick={() => confirmAction("¿Borrar esta sesión?") && void remove("workout_sessions", s.id)}>Borrar sesión</button>
-              </div>
-            </details>
-          );
-        })}
+  const kg = useLive(async () => (await all("weight_entries")).sort((a, b) => b.date.localeCompare(a.date))[0]?.weightKg ?? null, []);
+  const [filter, setFilter] = useState<"all" | "strength" | "cardio">("all");
+  const rows = [
+    ...(filter !== "cardio" ? sessions.map((s) => ({ kind: "strength" as const, key: s.id, date: s.date, at: s.startedAt, s })) : []),
+    ...(filter !== "strength" ? endurance.map((e) => ({ kind: "cardio" as const, key: e.id, date: e.date, at: e.startedAt, e })) : []),
+  ].sort((x, y) => y.date.localeCompare(x.date) || y.at.localeCompare(x.at)).slice(0, 60);
+  return (
+    <div className="stack">
+      <div className="pill-row">
+        {([["all", "Todo"], ["strength", "Fuerza"], ["cardio", "Cardio y cinta"]] as const).map(([v, l]) => <button key={v} className="chip" aria-pressed={filter === v} onClick={() => setFilter(v)}>{l}</button>)}
       </div>
-    </Card>
-  ) : <Empty title="Aún no hay sesiones guardadas">Empieza una sesión desde la pestaña Sesiones.</Empty>;
+      {rows.length ? (
+        <Card>
+          <div className="list">
+            {rows.map((r) => {
+              if (r.kind === "cardio") {
+                const e = r.e;
+                return (
+                  <div className="li" key={r.key}>
+                    <Icon name={e.sport === "bike" ? "bike" : e.sport === "run" ? "run" : "walk"} />
+                    <div className="grow">
+                      <div className="t">{SPORT_LABEL[e.sport]}{e.sessionType ? ` · ${TYPE_LABEL[e.sessionType]}` : ""}{e.whileWorking ? " · teletrabajo" : ""}</div>
+                      <div className="s">{formatDateEs(e.date)} · {formatDuration(e.durationSec)}{e.distanceM ? ` · ${(e.distanceM / 1000).toLocaleString("es-ES", { maximumFractionDigits: 2 })} km` : ""}{e.treadmillSpeedKmh ? ` · ${e.treadmillSpeedKmh} km/h ${e.treadmillInclinePct ?? 0} %` : ""}{kg ? ` · ~${Math.round(enduranceKcal(e, kg) / 10) * 10} kcal` : ""}</div>
+                      {e.whileWorking && <button className="link-btn xs" onClick={() => void patch("endurance_sessions", e.id, { whileWorking: false })}>¿No era en cinta de escritorio? Corregir</button>}
+                    </div>
+                    <SourceBadge source={e.source} />
+                    <button className="icon-btn" aria-label="Borrar actividad" onClick={() => confirmAction("¿Borrar esta actividad?") && void remove("endurance_sessions", e.id)}><Icon name="trash" /></button>
+                  </div>
+                );
+              }
+              const s = r.s;
+              const ss = sets.filter((x) => x.sessionId === s.id && x.completed);
+              const ex = [...new Set(ss.map((x) => x.exerciseId))];
+              const vol = ss.reduce((a, x) => a + (x.weightKg ?? 0) * (x.reps ?? 0), 0);
+              return (
+                <details key={r.key} className="li" style={{ display: "block" }}>
+                  <summary style={{ cursor: "pointer", listStyle: "none" }}>
+                    <div className="row between" style={{ flexWrap: "nowrap" }}>
+                      <div className="row" style={{ gap: 10, flexWrap: "nowrap", minWidth: 0 }}><Icon name="dumbbell" /><div style={{ minWidth: 0 }}><div className="t">{s.title}</div><div className="s">{formatDateEs(s.date)} · {ss.length} series · {ex.length} ejercicios{vol ? ` · ${Math.round(vol).toLocaleString("es-ES")} kg vol.` : ""}{s.durationMin ? ` · ${s.durationMin} min` : ""}{s.rpe ? ` · RPE ${s.rpe}` : ""}{s.deload ? " · descarga" : ""}{kg ? ` · ~${Math.round(strengthKcal(s.durationMin ?? 60, kg) / 10) * 10} kcal` : ""}</div></div></div>
+                      <SourceBadge source={s.source} />
+                    </div>
+                  </summary>
+                  <div className="small" style={{ padding: "8px 0" }}>
+                    {ex.map((id) => <div key={id}><b>{findExercise(id)?.name ?? id}</b>: {ss.filter((x) => x.exerciseId === id).sort((a, b) => a.setIndex - b.setIndex).map((x) => `${x.weightKg ?? "PC"}×${x.reps ?? "?"}${x.rir != null ? ` @${x.rir}` : ""}`).join(" · ")}</div>)}
+                    {s.notes && <div className="muted">Notas: {s.notes}</div>}
+                    <button className="btn sm danger" style={{ marginTop: 6 }} onClick={() => confirmAction("¿Borrar esta sesión?") && void remove("workout_sessions", s.id)}>Borrar sesión</button>
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </Card>
+      ) : <Empty title="Aún no hay entrenamientos guardados">Empieza una sesión de fuerza o registra carrera, bici o cinta con «Actividad».</Empty>}
+      <p className="xs dim">kcal: gasto estimado por encima del reposo (±15 %). Cuentan en el balance de energía del día.</p>
+    </div>
+  );
 }
 
 function VolumeTab() {
