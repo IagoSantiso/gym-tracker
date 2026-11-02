@@ -372,3 +372,11 @@ table.data th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-sp
   .li.wrap>.acts{width:100%}
 }
 }
+
+/* Balance del día */
+.balance-row{display:grid;gap:4px;padding:6px 0}
+.balance-row .bar{display:flex;height:8px;background:var(--panel2);border-radius:99px;overflow:hidden}
+.balance-row .bar span{display:block;height:100%;background:var(--lime)}
+.balance-row .bar span.planned{background:color-mix(in srgb,var(--lime) 35%,transparent)}
+.portions summary{color:var(--muted);margin-top:2px}
+.portions[open] summary{margin-bottom:2px}

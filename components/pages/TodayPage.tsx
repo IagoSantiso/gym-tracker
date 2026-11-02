@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Card, Empty, Icon, Kpi, Notice, SourceBadge, useToast } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
+import { BalanceCard, Portions } from "@/components/pages/NutritionPage";
 import { ProposalCard } from "@/components/plan/ProposalCard";
 import { useDiabetes, useLive, useProfile } from "@/lib/db/hooks";
 import { tbl } from "@/lib/db/db";
@@ -141,10 +142,12 @@ export function TodayPage() {
                     <div className="grow">
                       <div className="s">{SLOT_LABEL[m.slot]}</div>
                       <div className="t">{r?.name}{m.servings !== 1 ? ` ×${m.servings.toLocaleString("es-ES")}` : ""}</div>
-                      {t && <div className="s"><b>{Math.round(t.carbsAvailableG)} g hidratos</b> · {Math.round(t.kcal)} kcal · {Math.round(t.proteinG)} g prot.</div>}
+                      {t && <div className="s"><b>{Math.round(t.carbsAvailableG)} g hidratos</b> · {Math.round(t.kcal)} kcal · {Math.round(t.proteinG)} g prot. · {Math.round(t.fatG)} g grasa</div>}
+                      {r && m.status === "planned" && <Portions recipeIngredients={r.ingredients} cat={cat} servings={m.servings} baseServings={r.servings} />}
+                      {m.status === "replaced" && <div className="xs dim">Sustituida por lo que registraste</div>}
                     </div>
-                    {m.status === "eaten" ? <span className="badge ok">Hecha</span> : <button className="btn sm primary" onClick={async () => { await markEaten(m); toast("Comida registrada"); }}><Icon name="check" />Hecha</button>}
-                    {m.status !== "eaten" && <Link className="btn sm ghost" href="/nutricion?tab=hoy" aria-label={`Cambiar ${r?.name}`}><Icon name="swap" /></Link>}
+                    {m.status === "eaten" ? <span className="badge ok">Hecha</span> : m.status === "replaced" ? null : <button className="btn sm primary" onClick={async () => { await markEaten(m); toast("Comida registrada"); }}><Icon name="check" />Hecha</button>}
+                    {m.status === "planned" && <Link className="btn sm ghost" href="/nutricion?tab=hoy" aria-label={`Cambiar ${r?.name}`}><Icon name="swap" /></Link>}
                   </div>
                 );
               })}
@@ -152,6 +155,8 @@ export function TodayPage() {
           ) : <Empty title="Sin menú" action={<Link className="btn primary" href="/nutricion?tab=menu">Generar menú</Link>} />}
           <p className="xs dim" style={{ marginBottom: 0 }}>Hidratos calculados con datos de referencia (estimación). No es una indicación de dosis.</p>
         </Card>
+
+        {cat && <BalanceCard cat={cat} compact />}
 
         <Card title="Preparar o comprar">
           {tomorrowBatch.length === 0 && needed.length === 0 ? <p className="small muted" style={{ margin: 0 }}>Nada pendiente para hoy.</p> : (

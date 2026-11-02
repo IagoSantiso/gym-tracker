@@ -1,6 +1,7 @@
 /** Objetivo nutricional vigente: acordado (manual) o estimado con rango a partir de datos recientes. */
 import { tbl } from "@/lib/db/db";
 import { all } from "@/lib/db/repo";
+import { fatRange } from "@/lib/domain/nutrition/balance";
 import { estimateEnergy, weeklyRate, weightTrend, type EnergyEstimate } from "@/lib/domain/nutrition/targets";
 import { addDays, localDate } from "@/lib/domain/time";
 
@@ -9,6 +10,8 @@ export interface CurrentTargets {
   kcal: [number, number] | null;
   proteinG: [number, number] | null;
   carbsG: number | null;
+  /** grasa: pauta manual o 25–35 % de la energía */
+  fatG: [number, number] | null;
   fiberG: number;
   estimate: EnergyEstimate | null;
   latestWeight: number | null;
@@ -32,12 +35,13 @@ export async function currentTargets(): Promise<CurrentTargets> {
   if (goals?.calorieMode === "manual" && goals.manualKcal) {
     return {
       mode: "manual", kcal: [goals.manualKcal, goals.manualKcal], proteinG: goals.manualProteinG ? [goals.manualProteinG, goals.manualProteinG] : est?.proteinG ?? null,
-      carbsG: goals.manualCarbsG ?? null, fiberG: 25, estimate: est, latestWeight, ratePerWeek: weeklyRate(trend), trendDays,
+      carbsG: goals.manualCarbsG ?? null, fatG: fatRange([goals.manualKcal, goals.manualKcal], goals.manualFatG), fiberG: 25, estimate: est, latestWeight, ratePerWeek: weeklyRate(trend), trendDays,
       source: goals.manualSource ? `Acordado: ${goals.manualSource}` : "Acordado con profesional",
     };
   }
   return {
-    mode: "estimated", kcal: est?.ok ? est.target! : null, proteinG: est?.proteinG ?? null, carbsG: null, fiberG: 25, estimate: est,
+    mode: "estimated", kcal: est?.ok ? est.target! : null, proteinG: est?.proteinG ?? null, carbsG: null,
+    fatG: fatRange(est?.ok ? est.target! : null, goals?.manualFatG), fiberG: 25, estimate: est,
     latestWeight, ratePerWeek: weeklyRate(trend), trendDays, source: "Estimación (Mifflin-St Jeor × actividad)",
   };
 }

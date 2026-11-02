@@ -124,6 +124,7 @@ export const PROPOSAL_WHITELIST: Record<string, string[] | "*"> = {
   recipes: "*",
   recipe_ingredients: "*",
   user_notes: "*",
+  food_logs: ["date", "eatenAt", "slot", "mealEntryId", "recipeId", "servings", "items", "title", "totals", "source", "note"],
 };
 
 export function validateOps(ops: ProposalOp[]): string[] {

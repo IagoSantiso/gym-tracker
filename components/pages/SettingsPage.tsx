@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, Field, Icon, Notice, NumInput, PageHead, SourceBadge, Tabs, Toggle, confirmAction, useTabParam, useToast } from "@/components/ui";
 import { ChipsF, ListF, NumF, SelectF, TextF } from "@/components/settings/fields";
 import { useDiabetes, useGoals, useLive, usePreferences, useProfile, useTable } from "@/lib/db/hooks";
@@ -403,7 +403,8 @@ function SyncTab() {
 function DataTab() {
   const toast = useToast();
   const [legacy, setLegacy] = useState("");
-  const [backup, setBackup] = useState("");
+  const backupRef = useRef<HTMLTextAreaElement>(null);
+  const [hasBackup, setHasBackup] = useState(false);
   const [busy, setBusy] = useState(false);
   const [table, setTable] = useState<TableName>("weight_entries");
   const restore = async (text: string) => {
@@ -411,7 +412,8 @@ function DataTab() {
     setBusy(true);
     try {
       const r = await importBackup(text);
-      setBackup("");
+      if (backupRef.current) backupRef.current.value = "";
+      setHasBackup(false);
       alert(`Copia restaurada: ${r.restored} registros.`);
       location.assign("/");
     } catch (err) {
@@ -451,9 +453,9 @@ function DataTab() {
         </div>
       </Card>
       <Card title="Restaurar copia" sub="Pega aquí el contenido completo de una copia JSON de NEXO (o elige el archivo). La copia sustituye a los datos de este dispositivo: perfil, menús, plan e historial.">
-        <textarea className="input" style={{ minHeight: 110 }} value={backup} onChange={(e) => setBackup(e.target.value)} placeholder='{"app":"NEXO","schema":1,…}' aria-label="Copia JSON de NEXO" />
+        <textarea ref={backupRef} className="input" style={{ minHeight: 110 }} onInput={(e) => setHasBackup(!!e.currentTarget.value.trim())} placeholder='{"app":"NEXO","schema":1,…}' aria-label="Copia JSON de NEXO" spellCheck={false} autoComplete="off" />
         <div className="row" style={{ marginTop: 8 }}>
-          <button className="btn primary" disabled={!backup.trim() || busy} onClick={() => void restore(backup)}>Restaurar copia pegada</button>
+          <button className="btn primary" disabled={!hasBackup || busy} onClick={() => void restore(backupRef.current?.value ?? "")}>Restaurar copia pegada</button>
           <label className="btn ghost">Elegir archivo
             <input type="file" accept=".json,application/json,text/plain,*/*" style={{ display: "none" }} onChange={async (e) => {
               const f = e.target.files?.[0];

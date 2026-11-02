@@ -127,6 +127,9 @@ try {
     await page.getByText("Comida registrada").waitFor();
   }
   ok(await page.getByText("Registrado hoy").isVisible(), "comida marcada como hecha");
+  ok(await page.locator("details.portions summary").first().isVisible().catch(() => false) && /\d+ g/.test(await page.locator("details.portions").first().textContent()), "cantidades por ingrediente en las comidas de hoy");
+  ok(await page.getByText("Balance del día").isVisible(), "balance del día visible");
+  await shot("05b-balance");
 
   /* Diabetes: importación CSV sintético */
   await page.goto(BASE + "/diabetes?tab=importar", { waitUntil: "networkidle" });
@@ -174,6 +177,12 @@ try {
   await page.goto(BASE + "/ajustes?tab=datos", { waitUntil: "networkidle" });
   const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: /Copia completa/ }).click()]);
   ok(/nexo-.*\.json/.test(dl.suggestedFilename()), "exportación JSON");
+  const backupText = readFileSync(await dl.path(), "utf8");
+  await page.getByLabel("Copia JSON de NEXO").evaluate((el, v) => { el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); }, backupText);
+  await Promise.all([page.waitForURL(BASE + "/"), page.getByRole("button", { name: "Restaurar copia pegada" }).click()]);
+  await page.goto(BASE + "/nutricion?tab=menu", { waitUntil: "networkidle" });
+  await page.waitForTimeout(800);
+  ok((await page.locator(".li").count()) >= 21, "restaurar copia pegada conserva el menú");
 
   /* Modo avión */
   await page.goto(BASE + "/", { waitUntil: "networkidle" });

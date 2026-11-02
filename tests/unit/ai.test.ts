@@ -8,7 +8,9 @@ import { NexoDB, setDbForTests } from "@/lib/db/db";
 import { ensureInitialized, resetInitForTests } from "@/lib/db/init";
 import { put, all } from "@/lib/db/repo";
 import { executeTool } from "@/lib/ai/client-tools";
-import { BLOCKED_RESPONSE, EMERGENCY_RESPONSE } from "@/lib/domain/safety/guardrails";
+import { BLOCKED_NUTRITION_RESPONSE, BLOCKED_RESPONSE, EMERGENCY_RESPONSE, scanOutput } from "@/lib/domain/safety/guardrails";
+import { acceptProposal } from "@/lib/services/plan";
+import { tbl } from "@/lib/db/db";
 import { addDays, localDate, weekStartOf } from "@/lib/domain/time";
 
 const meta = { assumptions: [], data_used: ["plan"], warnings: [], confidence: "medium", requires_user_approval: true, created_at: "2026-11-01" };
@@ -26,6 +28,16 @@ describe("servidor del asistente", () => {
     const r = await runChatTurn(req([{ role: "user", text: "¿cuánto me pongo?" }]), fake({ text: "Antes de correr ponte 2 unidades menos de insulina rápida." }));
     expect(r.item!.text).toBe(BLOCKED_RESPONSE);
     expect(r.item!.guardrail).toBe(true);
+  });
+  it("bloquea compensar comida con ejercicio o saltarse comidas, sin bloquear el consejo sano", async () => {
+    const r = await runChatTurn(req([{ role: "user", text: "me he pasado con la grasa" }]), fake({ text: "Puedes quemar esas calorías haciendo 40 minutos más de cardio esta tarde." }));
+    expect(r.item!.text).toBe(BLOCKED_NUTRITION_RESPONSE);
+    for (const bad of ["Entrena más intenso hoy para compensar el desayuno.", "Lo mejor es que te saltes... no: sáltate la cena.", "Haz un ayuno hasta mañana.", "Hoy no cenes y listo.", "Haz la tirada más larga para quemar las rosquillas."]) {
+      expect(scanOutput(bad).ok, bad).toBe(false);
+    }
+    for (const good of ["Sin saltarte comidas, elige una cena con menos grasa.", "No te saltes la cena: mejor una opción a la plancha.", "Mantén tu entrenamiento como estaba planificado.", "La cena puede llevar menos aceite para compensar el día."]) {
+      expect(scanOutput(good).ok, good).toBe(true);
+    }
   });
   it("deja pasar respuestas descriptivas", async () => {
     const r = await runChatTurn(req([{ role: "user", text: "¿Qué tal mi semana?" }]), fake({ text: "Hiciste 3 sesiones de fuerza y 18 km de carrera." }));
@@ -137,5 +149,63 @@ describe("herramientas en cliente", () => {
     await grant("ai_assistant", "ai_training");
     const r = await executeTool({ id: "1", name: "draft_training_plan", input: { name: "X", description: "d", days: [{ title: "A", subtitle: "", focus: "full", items: [{ exercise_id: "inventado", sets: 3, reps_min: 8, reps_max: 12, rir: 2, rest_sec: 90, notes: null }] }], meta } });
     expect(r.isError).toBe(true);
+  });
+  it("registra lo comido (base de datos + estimación) como propuesta y sustituye la comida prevista al aceptar", async () => {
+    await grant("ai_assistant", "ai_nutrition");
+    const today = localDate();
+    const plan = await put("meal_plans", { weekStart: weekStartOf(today), generatedAt: new Date().toISOString(), settings: {}, generatorVersion: "t" });
+    const planned = await put("meal_entries", { mealPlanId: plan.id, date: today, slot: "breakfast", recipeId: "avena-yogur-frutos-rojos", servings: 1, locked: false, status: "planned" });
+    const input = {
+      date: null, time_hhmm: "08:30", slot: "breakfast", title: "Tostadas, café y tortilla francesa",
+      items: [
+        { description: "2 tostadas de pan", food_id: "bread_white", grams: 60, estimate: null },
+        { description: "tortilla francesa de 2 huevos", food_id: "egg", grams: 100, estimate: null },
+        { description: "café con leche", food_id: null, grams: 200, estimate: { kcal: 70, protein_g: 4, carbs_available_g: 6, fat_g: 3.5, fiber_g: 0 } },
+      ],
+      replaces_planned_meal: true, meta,
+    };
+    const r = await executeTool({ id: "1", name: "log_meal_estimate", input });
+    expect(r.isError).toBeFalsy();
+    expect(r.content).toMatch(/kcal/);
+    expect(await all("food_logs")).toHaveLength(0); // nada se aplica solo
+    const p = (await all("proposals")).find((x) => x.kind === "ai_food_log")!;
+    expect(p.warnings.join(" ")).toMatch(/estimad/i);
+    expect((await acceptProposal(p.id)).ok).toBe(true);
+    const logs = await all("food_logs");
+    expect(logs).toHaveLength(1);
+    expect(logs[0].source).toBe("estimated");
+    expect(logs[0].totals.kcal).toBeGreaterThan(300);
+    expect((await tbl("meal_entries").get(planned.id))!.status).toBe("replaced");
+    const bal = JSON.parse((await executeTool({ id: "2", name: "get_day_balance", input: { date: null } })).content);
+    expect(bal.logged).toHaveLength(1);
+    expect(bal.remaining_planned.every((m: { slot: string }) => m.slot !== "breakfast")).toBe(true);
+    expect(bal.rules).toMatch(/ejercicio/);
+  });
+  it("rechaza estimaciones incoherentes o imposibles y comidas futuras", async () => {
+    await grant("ai_assistant", "ai_nutrition");
+    const base = { date: null, time_hhmm: null, slot: "snack", title: "Rosquillas", replaces_planned_meal: false, meta };
+    const bad = await executeTool({ id: "1", name: "log_meal_estimate", input: { ...base, items: [{ description: "2 rosquillas", food_id: null, grams: 80, estimate: { kcal: 100, protein_g: 5, carbs_available_g: 40, fat_g: 15, fiber_g: null } }] } });
+    expect(bad.isError).toBe(true);
+    expect(bad.content).toMatch(/incoherente/);
+    const ok = await executeTool({ id: "2", name: "log_meal_estimate", input: { ...base, items: [{ description: "2 rosquillas", food_id: null, grams: 80, estimate: { kcal: 340, protein_g: 5, carbs_available_g: 42, fat_g: 16, fiber_g: null } }] } });
+    expect(ok.isError).toBeFalsy();
+    const future = await executeTool({ id: "3", name: "log_meal_estimate", input: { ...base, date: addDays(localDate(), 2), items: [{ description: "x", food_id: "egg", grams: 50, estimate: null }] } });
+    expect(future.isError).toBe(true);
+    const missing = await executeTool({ id: "4", name: "log_meal_estimate", input: { ...base, items: [{ description: "churros", food_id: null, grams: 100, estimate: null }] } });
+    expect(missing.isError).toBe(true);
+  });
+  it("las variantes de ingredientes avisan si cambian los hidratos de la comida", async () => {
+    await grant("ai_assistant", "ai_nutrition");
+    const today = localDate();
+    const plan = await put("meal_plans", { weekStart: weekStartOf(today), generatedAt: new Date().toISOString(), settings: {}, generatorVersion: "t" });
+    await put("meal_entries", { mealPlanId: plan.id, date: today, slot: "dinner", recipeId: "salmon-patata-judias", servings: 1, locked: false, status: "planned" });
+    const r = await executeTool({ id: "1", name: "propose_meal_variant", input: { date: today, slot: "dinner", name: "Tortilla con pan", reason: "No tengo salmón", ingredients: [{ food_id: "egg", grams: 150 }, { food_id: "bread_white", grams: 200 }], meta } });
+    expect(r.isError).toBeFalsy();
+    const p = (await all("proposals")).find((x) => x.kind === "ai_meal_variant")!;
+    expect(p.warnings.join(" ")).toMatch(/hidratos/);
+    expect((await acceptProposal(p.id)).ok).toBe(true);
+    const e = (await all("meal_entries")).find((m) => m.slot === "dinner")!;
+    expect(e.replacedFrom).toBe("salmon-patata-judias");
+    expect((await all("recipe_ingredients")).filter((i) => i.recipeId === e.recipeId)).toHaveLength(2);
   });
 });

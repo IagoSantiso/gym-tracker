@@ -1,6 +1,6 @@
 # Estado del proyecto — NEXO v1
 
-Última actualización: **2026-11-01**. Rama: `claude/gym-tracker-pwa-migration-0v1inn`. Punto de restauración previo: tag `restore/pre-nexo` (commit `4e7ee9b`).
+Última actualización: **2026-11-02**. Rama: `claude/gym-tracker-pwa-migration-0v1inn`. Punto de restauración previo: tag `restore/pre-nexo` (commit `4e7ee9b`).
 
 ## Resumen
 Las fases 0–7 del prompt maestro (adaptado a Claude Code, ver `docs/PROMPT_MAESTRO_CLAUDE.md`) están implementadas como un monolito modular Next.js local-first. Además se completaron las fases pendientes del prompt original del gimnasio (sync offline-first con Supabase, importación de datos v2, progreso con gráficas, doble progresión, asistente IA con proveedor configurable).
@@ -15,6 +15,14 @@ Las fases 0–7 del prompt maestro (adaptado a Claude Code, ver `docs/PROMPT_MAE
 | 5 · Integraciones | ✅ (parcial por diseño) | Polar AccessLink OAuth2 + ejercicios; TCX/GPX; CSV pasos/sueño. Health Connect documentado (requiere app Android) |
 | 6 · IA | ✅ | Claude (por defecto) / OpenAI, herramientas en cliente, propuestas con aprobación, guardarraíles |
 | 7 · Analítica y pulido | ✅ | Revisión semanal, informe imprimible/CSV, accesibilidad, E2E, CI, docs |
+
+## Iteración 2026-11-02
+- **Datos entre dispositivos**: restaurar copia pegando el JSON (o archivo sin filtro de tipo), con sustitución completa; botones «Copiar copia» y «Compartir». Sync segura (pull primero, adopción de la nube en dispositivo nuevo, LWW también en servidor — migración `20261102000000_lww_guard.sql`, aplicada en Supabase).
+- **Cantidades**: cada comida muestra gramos por ingrediente, medidas caseras (unidades, cucharadas, rebanadas) y equivalente cocinado de lo que se pesa en crudo.
+- **Balance del día** (Nutrición → Hoy y Hoy): comido + previsto frente a rangos (energía, proteína, grasa 25–35 %, hidratos pautados, fibra), mensajes y opciones deterministas para reajustar lo que queda (manteniendo hidratos).
+- **Lo comido sustituye a lo previsto**: registrar en un hueco marca la comida del menú como sustituida; registro por etiqueta admite grasa.
+- **IA**: `get_day_balance`, `log_meal_estimate` (base de datos + estimación validada para alimentos desconocidos, p. ej. rosquillas) y `propose_meal_variant` (cambiar ingredientes por los que tienes, aviso si cambian los hidratos). Nuevos guardarraíles: no compensar con ejercicio ni saltarse comidas (D25).
+- Verificación: `npm test` 121 tests · `npm run test:e2e` 39 comprobaciones (incluye cantidades, balance y restaurar pegando).
 
 ## Criterios de aceptación (sección 18)
 | # | Criterio | Estado | Cómo se verifica |
@@ -53,7 +61,7 @@ Nada de esto bloquea el uso local. Detalle en `.env.example`.
 - **LibreView**: formato CSV inferido de fuentes comunitarias (Abbott no lo documenta). Detección flexible y mapeo manual de respaldo; PDF solo extrae métricas agregadas (experimental).
 - **Polar**: implementado según la documentación v3 pero sin probar contra la API real (requiere credenciales). Sin webhooks ni sueño/Nightly Recharge en v1. Solo ejercicios de los últimos 30 días subidos tras conectar.
 - **IA**: sin prueba en vivo en esta sesión; límites de uso en memoria por instancia (en serverless son orientativos); coste estimado con precios publicados.
-- **Sync**: última escritura gana; validado con PGlite y un remoto en memoria, no contra un proyecto Supabase real. Los archivos originales de glucosa y las muestras de actividad no se sincronizan.
+- **Sync**: última escritura gana por registro (cliente y servidor); validado con PGlite y un remoto en memoria. El primer dispositivo que inicia sesión sube sus datos; los siguientes adoptan la nube. Los archivos originales de glucosa y las muestras de actividad no se sincronizan.
 - **Cifrado local**: solo los archivos originales se cifran (AES-GCM, clave no exportable); el resto de IndexedDB depende de la seguridad del dispositivo.
 - **Health Connect**: no disponible para web; requiere companion Android (diseñado en `docs/INTEGRATIONS.md`). FIT no soportado.
 - **Alimentos**: 64 genéricos transcritos de USDA (verificar con etiqueta); BEDCA no incluido por licencia.

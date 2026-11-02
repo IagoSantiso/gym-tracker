@@ -10,6 +10,8 @@ import { SECTION_LABEL, SEED_SOURCES, ALLERGENS } from "@/lib/domain/nutrition/f
 import { SLOT_LABEL, SLOT_ORDER } from "@/lib/domain/nutrition/recipes";
 import { eligibleRecipes, swapOptions } from "@/lib/domain/nutrition/menu";
 import { quantityLabel, toCsv } from "@/lib/domain/nutrition/shopping";
+import { portionLines } from "@/lib/domain/nutrition/portions";
+import { loadDayBalance } from "@/lib/services/balance";
 import { addDays, formatDateEs, localDate, weekStartOf } from "@/lib/domain/time";
 import type { Food, MealEntry, MealSlot, NutrientTotals, ShopSection } from "@/lib/db/types";
 import { generateWeekMenu, loadCatalog, markEaten, refreshShoppingList, saveRecipe, setRecipePref, swapMeal, weekMeals, lookupBarcode, type Catalog } from "@/lib/services/nutrition";
@@ -58,24 +60,48 @@ export function NutrientLine({ t, compact }: { t: NutrientTotals; compact?: bool
   );
 }
 
-function MealRow({ e, cat, onSwap }: { e: MealEntry; cat: Catalog; onSwap: () => void }) {
+export function Portions({ recipeIngredients, cat, servings, baseServings, open }: { recipeIngredients: { foodId: string; grams: number; note?: string | null }[]; cat: Catalog; servings: number; baseServings: number; open?: boolean }) {
+  const lines = portionLines(recipeIngredients, cat.food, servings, baseServings);
+  if (!lines.length) return null;
+  return (
+    <details open={open} className="portions">
+      <summary className="xs" style={{ cursor: "pointer", fontWeight: 650 }}>Cantidades ({lines.length} ingredientes)</summary>
+      <ul className="small" style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+        {lines.map((l, i) => (
+          <li key={`${l.foodId}-${i}`}>
+            <b>{l.label}</b> {l.name.toLowerCase()}
+            {l.stateNote && <span className="xs dim"> · {l.stateNote}{l.cookedG ? ` (≈ ${l.cookedG} g cocinado)` : ""}</span>}
+            {l.note && <span className="xs dim"> · {l.note}</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function MealRow({ e, cat, onSwap, openPortions }: { e: MealEntry; cat: Catalog; onSwap: () => void; openPortions?: boolean }) {
   const toast = useToast();
   const r = cat.recipe(e.recipeId);
   if (!r) return null;
   const t = recipeNutrition(r.ingredients, cat.food, e.servings, r.servings).totals;
   const hint = absorptionHint(t);
   return (
-    <div className="li wrap" style={{ alignItems: "flex-start", opacity: e.status === "skipped" ? 0.55 : 1 }}>
+    <div className="li wrap" style={{ alignItems: "flex-start", opacity: e.status === "skipped" || e.status === "replaced" ? 0.55 : 1 }}>
       <div className="grow">
         <div className="xs dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 750 }}>{SLOT_LABEL[e.slot]}{e.locked ? " · 🔒" : ""}</div>
         <div className="t">{r.name}{e.servings !== 1 ? ` · ×${e.servings.toLocaleString("es-ES")}` : ""}</div>
         <NutrientLine t={t} compact />
+        <span className="xs dim"> · {fmtNutrient("fatG", t.fatG)} g grasa</span>
+        <Portions recipeIngredients={r.ingredients} cat={cat} servings={e.servings} baseServings={r.servings} open={openPortions && e.status === "planned"} />
+        {e.status === "replaced" && <div className="xs" style={{ color: "var(--info)" }}>Sustituida por lo que registraste en este hueco</div>}
         {e.notes && <div className="xs muted">{e.notes}</div>}
         {hint && <div className="xs" style={{ color: "var(--info)" }}>{hint}</div>}
         {e.replacedFrom && <div className="xs dim">Sustituye a: {cat.recipe(e.replacedFrom)?.name}</div>}
       </div>
       <div className="acts">
-        {e.status === "eaten" ? <span className="badge ok">Hecha</span> : (
+        {e.status === "eaten" ? <span className="badge ok">Hecha</span> : e.status === "replaced" ? (
+          <button className="btn sm ghost" onClick={() => void patch("meal_entries", e.id, { status: "planned" })}>Recuperar</button>
+        ) : (
           <>
             <button className="btn sm primary" onClick={async () => { await markEaten(e); toast("Comida registrada"); }}><Icon name="check" />Hecha</button>
             <button className="btn sm" onClick={onSwap}><Icon name="swap" />Cambiar</button>
@@ -139,8 +165,9 @@ function TodayTab({ cat }: { cat: Catalog }) {
       <DayTotals logs={logs.map((l) => l.totals)} targets={targets} />
       <Card title="Comidas previstas hoy">
         {meals && !meals.length ? <Empty title="Sin menú esta semana" action={<button className="btn primary" onClick={() => void generateWeekMenu(ws, { kcalTarget: targets?.kcal ?? null, keepLocked: true })}>Generar menú</button>} /> :
-          <div className="list">{sorted.map((e) => <MealRow key={e.id} e={e} cat={cat} onSwap={() => setSwap(e)} />)}</div>}
+          <div className="list">{sorted.map((e) => <MealRow key={e.id} e={e} cat={cat} onSwap={() => setSwap(e)} openPortions />)}</div>}
       </Card>
+      <BalanceCard cat={cat} />
       <Card title="Registrado hoy">
         {logs.length ? (
           <div className="list">
@@ -160,6 +187,58 @@ function TodayTab({ cat }: { cat: Catalog }) {
       </Card>
       <SwapModal entry={swap} cat={cat} onClose={() => setSwap(null)} />
     </div>
+  );
+}
+
+const STATUS_LABEL = { low: "por debajo", ok: "en rango", high: "por encima", unknown: "sin objetivo" } as const;
+
+/** Balance del día: lo comido + lo que queda, frente a tus rangos; y opciones para reajustar lo que queda. */
+export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean }) {
+  const toast = useToast();
+  const b = useLive(() => loadDayBalance(localDate(), cat), [cat]);
+  if (!b) return null;
+  const fmtR = (r: [number, number] | null) => (!r ? "—" : !Number.isFinite(r[1]) ? `≥ ${r[0]}` : r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`);
+  const apply = async (o: (typeof b.options)[number]) => {
+    if (o.carbsChanged && !confirmAction(`Este cambio modifica los hidratos de esa comida en ${o.dCarbs > 0 ? "+" : ""}${Math.round(o.dCarbs)} g. Si sigues una pauta de hidratos o de insulina, revísalo con tu protocolo y tu equipo sanitario. ¿Aplicar?`)) return;
+    if (o.recipe.id === b.remaining.find((m) => m.id === o.mealId)?.recipe.id) await patch("meal_entries", o.mealId, { servings: o.servings });
+    else await swapMeal(o.mealId, o.recipe.id);
+    toast("Resto del día reajustado");
+  };
+  return (
+    <Card title="Balance del día" sub="Lo comido + lo que queda del menú, frente a tus rangos. Orientativo.">
+      {!b.logs.length && <p className="small muted" style={{ marginTop: 0 }}>Cuando registres lo que comes (aunque no sea lo del menú), aquí verás cómo va el día y opciones para ajustar lo que queda.</p>}
+      <div className="list">
+        {b.nutrients.filter((n) => !compact || n.key !== "fiberG").map((n) => {
+          const max = Math.max(n.projected, n.target && Number.isFinite(n.target[1]) ? n.target[1] : n.target?.[0] ?? 0, 1);
+          return (
+            <div key={n.key} className="balance-row">
+              <div className="row between small"><b>{n.label}</b><span>{Math.round(n.consumed)} comido + {Math.round(n.planned)} previsto = <b>{Math.round(n.projected)}</b> {n.unit} · objetivo {fmtR(n.target)} <span className={`badge ${n.status === "ok" ? "ok" : n.status === "unknown" ? "" : "warn"}`}>{STATUS_LABEL[n.status]}</span></span></div>
+              <div className="bar" aria-hidden><span style={{ width: `${Math.min(100, (n.consumed / max) * 100)}%` }} /><span className="planned" style={{ width: `${Math.min(100, (n.planned / max) * 100)}%` }} /></div>
+            </div>
+          );
+        })}
+      </div>
+      {b.messages.map((m, i) => <Notice key={i} kind="info">{m}</Notice>)}
+      {b.hasEstimates && <p className="xs dim">Incluye comidas estimadas (sin etiqueta): los valores pueden desviarse bastante.</p>}
+      {b.options.length > 0 && compact && <a className="btn sm" href="/nutricion?tab=hoy">Ver {b.options.length} opciones para reajustar lo que queda</a>}
+      {b.options.length > 0 && !compact && (
+        <>
+          <div className="small" style={{ fontWeight: 700, margin: "10px 0 4px" }}>Opciones para lo que queda</div>
+          <div className="list">
+            {b.options.map((o) => (
+              <div className="li" key={`${o.mealId}-${o.recipe.id}-${o.servings}`}>
+                <div className="grow">
+                  <div className="t">{SLOT_LABEL[o.slot]}: {o.recipe.id === b.remaining.find((m) => m.id === o.mealId)?.recipe.id ? `misma receta ×${o.servings.toLocaleString("es-ES")}` : o.recipe.name}</div>
+                  <div className="xs dim">{o.why} · {o.carbsChanged ? <b style={{ color: "var(--amber)" }}>cambia los hidratos {o.dCarbs > 0 ? "+" : ""}{Math.round(o.dCarbs)} g</b> : "mantiene los hidratos"}</div>
+                </div>
+                <button className="btn sm" onClick={() => void apply(o)}>Aplicar</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <p className="xs dim" style={{ marginBottom: 0 }}>No se proponen saltarse comidas ni «quemar» lo comido con ejercicio. Prioriza mantener los hidratos de cada comida.</p>
+    </Card>
   );
 }
 

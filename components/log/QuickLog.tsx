@@ -94,6 +94,7 @@ function MealModal({ onClose }: { onClose: () => void }) {
   const [carbs, setCarbs] = useState<number | null>(null);
   const [kcal, setKcal] = useState<number | null>(null);
   const [prot, setProt] = useState<number | null>(null);
+  const [fat, setFat] = useState<number | null>(null);
   const preview = useMemo(() => {
     if (!cat) return null;
     if (mode === "recipe" && recipeId) {
@@ -115,7 +116,7 @@ function MealModal({ onClose }: { onClose: () => void }) {
     } else if (mode === "foods") {
       await logFreeMeal({ slot, title: title || "Comida", items: items.filter((i) => i.foodId && i.grams).map((i) => ({ foodId: i.foodId, grams: i.grams! })), date: w.date, eatenAt: w.iso() });
     } else {
-      await logManualMeal({ slot, title: title || "Comida (etiqueta)", carbsG: carbs, kcal, proteinG: prot, eatenAt: w.iso() });
+      await logManualMeal({ slot, title: title || "Comida (etiqueta)", carbsG: carbs, kcal, proteinG: prot, fatG: fat, eatenAt: w.iso() });
     }
     toast("Comida registrada");
     onClose();
@@ -169,6 +170,7 @@ function MealModal({ onClose }: { onClose: () => void }) {
               <Field label="Hidratos (g)"><NumInput value={carbs} onChange={setCarbs} ariaLabel="Hidratos en gramos" /></Field>
               <Field label="Energía (kcal)"><NumInput value={kcal} onChange={setKcal} ariaLabel="Energía" /></Field>
               <Field label="Proteína (g)"><NumInput value={prot} onChange={setProt} ariaLabel="Proteína" /></Field>
+              <Field label="Grasa (g)"><NumInput value={fat} onChange={setFat} ariaLabel="Grasa" /></Field>
             </div>
           </>
         )}

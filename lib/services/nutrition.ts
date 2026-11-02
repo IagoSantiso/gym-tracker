@@ -107,9 +107,21 @@ export async function markEaten(entry: MealEntry, servings?: number): Promise<Fo
   });
 }
 
+/**
+ * Lo comido en un hueco sustituye a lo previsto: la comida del menú de ese día y hueco pasa a
+ * «replaced» (el menú sugerido se conserva como referencia; lo registrado es lo real).
+ */
+export async function replacePlannedSlot(date: string, slot: MealSlot): Promise<MealEntry | undefined> {
+  const entries = (await tbl("meal_entries").where("date").equals(date).toArray()).filter(active);
+  const e = entries.find((x) => x.slot === slot && x.status === "planned");
+  if (e) await patch("meal_entries", e.id, { status: "replaced" });
+  return e;
+}
+
 export async function logFreeMeal(opts: { slot: MealSlot; title: string; items: { foodId: string; grams: number }[]; date?: string; eatenAt?: string }) {
   const cat = await loadCatalog();
   const { totals } = recipeNutrition(opts.items.map((i) => ({ ...i, note: null })), cat.food, 1, 1);
+  await replacePlannedSlot(opts.date ?? localDate(), opts.slot);
   return put("food_logs", {
     date: opts.date ?? localDate(), eatenAt: opts.eatenAt ?? nowIso(), slot: opts.slot, mealEntryId: null, recipeId: null, servings: null,
     items: opts.items, title: opts.title, totals, source: "calculated", note: null,
@@ -117,11 +129,12 @@ export async function logFreeMeal(opts: { slot: MealSlot; title: string; items: 
 }
 
 /** Registro rápido solo con hidratos/energía de una etiqueta (dato manual). */
-export async function logManualMeal(opts: { slot: MealSlot; title: string; carbsG: number | null; kcal: number | null; proteinG: number | null; eatenAt?: string }) {
+export async function logManualMeal(opts: { slot: MealSlot; title: string; carbsG: number | null; kcal: number | null; proteinG: number | null; fatG?: number | null; eatenAt?: string }) {
+  await replacePlannedSlot(localDate(opts.eatenAt ?? Date.now()), opts.slot);
   return put("food_logs", {
     date: localDate(opts.eatenAt ?? Date.now()), eatenAt: opts.eatenAt ?? nowIso(), slot: opts.slot, mealEntryId: null, recipeId: null, servings: null,
     items: [], title: opts.title,
-    totals: { kcal: opts.kcal ?? 0, proteinG: opts.proteinG ?? 0, carbsAvailableG: opts.carbsG ?? 0, fiberG: 0, fatG: 0, satFatG: 0, sugarsG: 0, saltG: 0, missing: ["fiberG", "fatG", "satFatG", "sugarsG", "saltG", ...(opts.kcal == null ? ["kcal"] : []), ...(opts.proteinG == null ? ["proteinG"] : [])] },
+    totals: { kcal: opts.kcal ?? 0, proteinG: opts.proteinG ?? 0, carbsAvailableG: opts.carbsG ?? 0, fiberG: 0, fatG: opts.fatG ?? 0, satFatG: 0, sugarsG: 0, saltG: 0, missing: ["fiberG", "satFatG", "sugarsG", "saltG", ...(opts.fatG == null ? ["fatG"] : []), ...(opts.kcal == null ? ["kcal"] : []), ...(opts.proteinG == null ? ["proteinG"] : [])] },
     source: "manual", note: null,
   });
 }

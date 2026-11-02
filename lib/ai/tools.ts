@@ -98,6 +98,44 @@ export const Alternatives = z.strictObject({
   available_equipment: z.array(z.string().max(20)).max(12).nullable(),
 });
 
+const Slot = z.enum(["breakfast", "lunch", "dinner", "snack", "pre", "post"]);
+const DateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/** Estimación por alimento cuando no existe en la base (p. ej. «rosquillas» en un bar). */
+const ItemEstimate = z.strictObject({
+  kcal: z.number().min(0).max(2500),
+  protein_g: z.number().min(0).max(200),
+  carbs_available_g: z.number().min(0).max(400),
+  fat_g: z.number().min(0).max(200),
+  fiber_g: z.number().min(0).max(60).nullable(),
+});
+
+export const LogMealEstimate = z.strictObject({
+  date: DateStr.nullable(),
+  time_hhmm: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+  slot: Slot,
+  title: z.string().max(120),
+  items: z.array(z.strictObject({
+    description: z.string().max(120),
+    food_id: z.string().max(60).nullable(),
+    grams: z.number().min(1).max(2000),
+    estimate: ItemEstimate.nullable(),
+  })).min(1).max(12),
+  replaces_planned_meal: z.boolean(),
+  meta: Meta,
+});
+
+export const MealVariant = z.strictObject({
+  date: DateStr,
+  slot: Slot,
+  name: z.string().max(80),
+  reason: z.string().max(300),
+  ingredients: z.array(z.strictObject({ food_id: z.string().max(60), grams: z.number().min(1).max(1500) })).min(1).max(15),
+  meta: Meta,
+});
+
+export const DateOnly = z.strictObject({ date: DateStr.nullable() });
+
 export const WeekOffset = z.strictObject({ week_offset: z.number().int().min(-4).max(2) });
 
 export interface ToolDef {
@@ -118,6 +156,9 @@ export const TOOLS: ToolDef[] = [
   { name: "get_nutrition_summary", kind: "read", consent: "ai_nutrition", schema: Days, description: "Promedios diarios registrados (energía, proteína, hidratos disponibles, fibra), días con registros y menú de la semana." },
   { name: "get_cgm_period_summary", kind: "read", consent: "ai_cgm", schema: Days, description: "Métricas AGREGADAS de glucosa del periodo (TIR/TBR/TAR, media, CV, GMI si procede, cobertura, episodios) y observaciones descriptivas. Nunca lecturas individuales." },
   { name: "get_recovery_summary", kind: "read", consent: "ai_notes", schema: Days, description: "Check-ins de recuperación percibida (sueño, energía, fatiga, dolor) y notas del usuario." },
+  { name: "get_day_balance", kind: "read", consent: "ai_nutrition", schema: DateOnly, description: "Balance nutricional de un día (date null = hoy): lo registrado, lo que queda del menú (con meal ids, recetas y gramos por ingrediente), rangos objetivo (energía, proteína, grasa, hidratos pautados si existen), estado y opciones deterministas para reajustar lo que queda. Úsala antes de proponer cambios del día." },
+  { name: "log_meal_estimate", kind: "write", consent: "ai_nutrition", schema: LogMealEstimate, description: "Propone REGISTRAR lo que el usuario dice que ha comido (pendiente de su aprobación). Usa food_id de get_food_inventory cuando exista (la app calcula con su base de datos) y estimate solo para lo que no exista (p. ej. bollería de un bar): valores aproximados por la cantidad indicada, coherentes (kcal ≈ 4·prot + 4·hidratos + 9·grasa). replaces_planned_meal=true si sustituye a la comida prevista en ese hueco. Nunca incluyas insulina." },
+  { name: "propose_meal_variant", kind: "write", consent: "ai_nutrition", schema: MealVariant, description: "Propone cambiar los INGREDIENTES de una comida prevista (fecha + hueco) por otros que el usuario tiene, con food_id existentes y gramos. La app calcula nutrientes y avisa si cambian los hidratos de esa comida. Pendiente de aprobación." },
   { name: "propose_schedule_changes", kind: "write", consent: "ai_training", schema: ProposeSchedule, description: "Crea una PROPUESTA (no aplica nada) de cambios al plan semanal usando ids de get_weekly_schedule. Respeta: no dos días duros seguidos, al menos un descanso, no recuperar sesiones acumulando volumen." },
   { name: "draft_training_plan", kind: "write", consent: "ai_training", schema: TrainingPlanDraft, description: "Crea un BORRADOR de rutina de fuerza con ejercicios de la biblioteca (exercise_id existentes). Queda pendiente de aprobación." },
   { name: "draft_meal_plan", kind: "write", consent: "ai_nutrition", schema: MealPlanDraft, description: "Propone sustituir comidas del menú (fecha + momento) por recetas existentes (recipe_id de get_food_inventory). Pendiente de aprobación." },

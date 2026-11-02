@@ -1,7 +1,7 @@
 import "server-only";
 /** Orquestación de una vuelta del chat: guardarraíles de entrada, proveedor, validación y guardarraíles de salida. */
 import { TOOLS, validateToolInput, type ChatRequest, type ChatResponse } from "@/lib/ai/tools";
-import { BLOCKED_RESPONSE, EMERGENCY_RESPONSE, detectEmergency, scanDeep, scanOutput } from "@/lib/domain/safety/guardrails";
+import { EMERGENCY_RESPONSE, blockedMessage, detectEmergency, scanDeep, scanOutput } from "@/lib/domain/safety/guardrails";
 import { callAnthropic, anthropicModel } from "./anthropic";
 import { callOpenAI, openaiModel } from "./openai";
 import type { ProviderInput, ProviderResult } from "./types";
@@ -47,7 +47,7 @@ export async function runChatTurn(req: ChatRequest, call?: (i: ProviderInput) =>
   });
   const price = PRICES[r.model] ?? PRICES[currentModel()];
   return {
-    item: { role: "assistant", text: out.ok ? r.text : BLOCKED_RESPONSE, toolCalls, provider, raw: r.raw, guardrail: !out.ok },
+    item: { role: "assistant", text: out.ok ? r.text : blockedMessage(out.violations), toolCalls, provider, raw: r.raw, guardrail: !out.ok },
     usage: {
       ...r.usage,
       costUsd: price ? Math.round((((r.usage.inputTokens - r.usage.cacheReadTokens) * price[0] + r.usage.outputTokens * price[1] + r.usage.cacheReadTokens * price[2]) / 1e6) * 10000) / 10000 : null,
