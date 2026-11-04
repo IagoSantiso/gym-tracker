@@ -37,5 +37,17 @@
   "catcow": "Cat_Stretch",
   "worldsgreatest": "Worlds_Greatest_Stretch",
   "hipcircles": "Standing_Hip_Circles",
-  "calfstretch": "Calf_Stretch_Hands_Against_Wall"
+  "calfstretch": "Calf_Stretch_Hands_Against_Wall",
+  "crunch": "Crunches",
+  "reversecrunch": "Reverse_Crunch",
+  "bicyclecrunch": "Air_Bike",
+  "heeltouch": "Alternate_Heel_Touchers",
+  "floorlegraise": "Flat_Bench_Lying_Leg_Raise",
+  "kneeraise": "Knee_Hip_Raise_On_Parallel_Bars",
+  "machinecrunch": "Ab_Crunch_Machine",
+  "declinecrunch": "Decline_Crunch",
+  "obliquecrunch": "Oblique_Crunches_-_On_The_Floor",
+  "russiantwist": "Russian_Twist",
+  "toetouch": "Toe_Touchers",
+  "tuckcrunch": "Tuck_Crunch"
 }

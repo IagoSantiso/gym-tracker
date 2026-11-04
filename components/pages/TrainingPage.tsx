@@ -320,7 +320,7 @@ function HistoryTab() {
                 <details key={r.key} className="li" style={{ display: "block" }}>
                   <summary style={{ cursor: "pointer", listStyle: "none" }}>
                     <div className="row between" style={{ flexWrap: "nowrap" }}>
-                      <div className="row" style={{ gap: 10, flexWrap: "nowrap", minWidth: 0 }}><Icon name="dumbbell" /><div style={{ minWidth: 0 }}><div className="t">{s.title}</div><div className="s">{formatDateEs(s.date)} · {ss.length} series · {ex.length} ejercicios{vol ? ` · ${Math.round(vol).toLocaleString("es-ES")} kg vol.` : ""}{s.durationMin ? ` · ${s.durationMin} min` : ""}{s.rpe ? ` · RPE ${s.rpe}` : ""}{s.deload ? " · descarga" : ""}{kg ? ` · ~${Math.round(strengthKcal(s.durationMin ?? 60, kg) / 10) * 10} kcal` : ""}</div></div></div>
+                      <div className="row" style={{ gap: 10, flexWrap: "nowrap", minWidth: 0 }}><Icon name="dumbbell" /><div style={{ minWidth: 0 }}><div className="t">{s.title}</div><div className="s">{formatDateEs(s.date)} · {ss.length} series · {ex.length} ejercicios{vol ? ` · ${Math.round(vol).toLocaleString("es-ES")} kg vol.` : ""}{s.durationMin ? ` · ${s.durationMin} min` : ""}{s.rpe ? ` · RPE ${s.rpe}` : ""}{s.deload ? " · descarga" : ""}{kg ? ` · ~${Math.round(strengthKcal(s.durationMin ?? 0, kg) / 10) * 10} kcal` : ""}</div></div></div>
                       <SourceBadge source={s.source} />
                     </div>
                   </summary>

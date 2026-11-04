@@ -4,7 +4,7 @@
  * La sugerencia de progresión se muestra como "Hoy: X kg" y solo se aplica al pulsar "Aplicar"
  * (o automáticamente si el usuario lo activó en Ajustes).
  */
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { BodyMap } from "./BodyMap";
 import { Icon } from "@/components/ui/Icon";
 import type { LibraryExercise } from "@/lib/domain/training/library";
@@ -44,13 +44,14 @@ const parse = (s: string) => {
 };
 
 function ExerciseCardImpl({ index, item, ex, sets, rirTarget, logged, last, suggestion, autoApply, plateau, onSaveSet, onSwap }: Props) {
+  const edited = useRef(new Set<number>());
   const [phase, setPhase] = useState<Phase>("play");
   const lastSets = last?.sets.filter((s) => s.completed && !s.isWarmup) ?? [];
   const baseWeight = autoApply && suggestion.weightKg != null ? suggestion.weightKg : suggestion.lastWeightKg;
   const initial = (j: number): SetDraft => {
     const l = logged.find((s) => s.setIndex === j);
     if (l) return { id: l.id, weightKg: l.weightKg ?? null, reps: l.reps ?? null, rir: l.rir ?? null, completed: l.completed };
-    return { weightKg: baseWeight ?? null, reps: lastSets[j]?.reps ?? lastSets.at(-1)?.reps ?? item.repsMax, rir: rirTarget, completed: false };
+    return { weightKg: (autoApply ? baseWeight : lastSets[j]?.weightKg ?? lastSets.at(-1)?.weightKg ?? baseWeight) ?? null, reps: lastSets[j]?.reps ?? lastSets.at(-1)?.reps ?? item.repsMax, rir: rirTarget, completed: false };
   };
   const [drafts, setDrafts] = useState<SetDraft[]>(() => Array.from({ length: sets }, (_, j) => initial(j)));
   const [txt, setTxt] = useState(() => drafts.map((d) => ({ w: fmtKg(d.weightKg), r: d.reps == null ? "" : String(d.reps) })));
@@ -60,21 +61,24 @@ function ExerciseCardImpl({ index, item, ex, sets, rirTarget, logged, last, sugg
     setDrafts((prev) => Array.from({ length: sets }, (_, j) => {
       const l = logged.find((s) => s.setIndex === j);
       if (l) return { id: l.id, weightKg: l.weightKg ?? null, reps: l.reps ?? null, rir: l.rir ?? null, completed: l.completed };
-      return prev[j] ?? initial(j);
+      return edited.current.has(j) ? (prev[j] ?? initial(j)) : initial(j);
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sets, logged]);
+  }, [sets, logged, last, baseWeight]);
   useEffect(() => {
-    setTxt(drafts.map((d) => ({ w: fmtKg(d.weightKg), r: d.reps == null ? "" : String(d.reps) })));
+    setTxt(prev=>drafts.map((d,j) => edited.current.has(j) && !d.completed && prev[j] ? prev[j] : ({ w: fmtKg(d.weightKg), r: d.reps == null ? "" : String(d.reps) })));
   }, [drafts]);
 
   const done = drafts.filter((d) => d.completed).length;
   const complete = done >= sets;
   const applySuggestion = () => {
     if (suggestion.weightKg == null) return;
+    setTxt(ts=>ts.map((t,j)=>drafts[j]?.completed ? t : {...t,w:fmtKg(suggestion.weightKg)}));
+    drafts.forEach((d,j)=>{if (!d.completed) edited.current.add(j);});
     setDrafts((ds) => ds.map((d) => (d.completed ? d : { ...d, weightKg: suggestion.weightKg })));
   };
   const toggle = (j: number) => {
+    edited.current.add(j);
     const t = txt[j];
     const d: SetDraft = { ...drafts[j], weightKg: parse(t.w), reps: parse(t.r), completed: !drafts[j].completed };
     setDrafts((ds) => ds.map((x, i) => (i === j ? d : x)));
@@ -155,12 +159,13 @@ function ExerciseCardImpl({ index, item, ex, sets, rirTarget, logged, last, sugg
             <div key={j} className={`setrow ${d.completed ? "on" : ""}`}>
               <span className="n">{j + 1}</span>
               <input inputMode="decimal" aria-label={`Peso serie ${j + 1} (kg)`} value={txt[j]?.w ?? ""} placeholder={ex.bodyweight ? "PC" : "—"}
-                onChange={(e) => setTxt((t) => t.map((x, i) => (i === j ? { ...x, w: e.target.value.replace(/[^\d.,]/g, "") } : x)))}
+                onChange={(e) => {edited.current.add(j);setTxt((t) => t.map((x, i) => (i === j ? { ...x, w: e.target.value.replace(/[^\d.,]/g, "") } : x)));}}
                 onBlur={() => d.completed && onSaveSet(j, { ...d, weightKg: parse(txt[j].w) })} />
               <input inputMode="numeric" aria-label={`Repeticiones serie ${j + 1}`} value={txt[j]?.r ?? ""} placeholder={String(item.repsMax)}
-                onChange={(e) => setTxt((t) => t.map((x, i) => (i === j ? { ...x, r: e.target.value.replace(/[^\d]/g, "") } : x)))}
+                onChange={(e) => {edited.current.add(j);setTxt((t) => t.map((x, i) => (i === j ? { ...x, r: e.target.value.replace(/[^\d]/g, "") } : x)));}}
                 onBlur={() => d.completed && onSaveSet(j, { ...d, reps: parse(txt[j].r) })} />
               <select aria-label={`RIR serie ${j + 1}`} value={d.rir ?? ""} onChange={(e) => {
+                edited.current.add(j);
                 const rir = e.target.value === "" ? null : Number(e.target.value);
                 const nd = { ...d, rir };
                 setDrafts((ds) => ds.map((x, i) => (i === j ? nd : x)));

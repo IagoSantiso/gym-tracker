@@ -579,3 +579,25 @@ dialog.modal:has(.swap-footer) .mh,dialog.modal:has(.swap-footer) .mf{flex-shrin
 .text-action>svg{width:18px;height:18px;flex-shrink:0}
 .kitchen-hero .row>.btn{flex:1 1 auto;white-space:normal;min-width:0}
 .kitchen-hero p.xs{margin:10px 0 0}
+
+/* Today: energy first, readable rows with a single disclosure target. */
+.today-energy { margin-bottom:16px; }
+.today-energy-values { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:12px 0; }
+.today-energy-values>div { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.today-energy-values strong { font-size:clamp(23px,5.8vw,36px); line-height:1.2; font-variant-numeric:tabular-nums; }
+.today-energy-values strong small { font-size:12px; font-weight:500; color:var(--dim); }
+.today-item { border-top:1px solid var(--line); padding:12px 0; }
+.today-item>summary { cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:44px; list-style:none; }
+.today-item>summary::after { content:"⌄"; color:var(--dim); }
+.today-item[open]>summary::after { content:"⌃"; }
+.today-item>summary>span:first-child { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.today-item>summary .badge { flex-shrink:0; font-size:10px; }
+.today-item>summary:focus-visible { outline:2px solid var(--lime); outline-offset:3px; border-radius:4px; }
+.today-item .meal-card { margin-top:12px; }
+.today-section-foot { display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; padding-top:12px; }
+.today-exercise-list { list-style:none; padding:0; margin:12px 0; }
+.today-exercise-list li { display:flex; flex-direction:column; padding:6px 0; font-size:13px; }
+.today-exercise-list span { color:var(--dim); }
+.exercise-preview { display:flex; gap:8px; margin-top:12px; }
+.exercise-preview img { width:calc(50% - 4px); object-fit:cover; border-radius:8px; }
+@media(max-width:360px) { .today-item>summary { gap:6px; } .today-item>summary .badge { padding:3px 5px; } }

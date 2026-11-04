@@ -28,7 +28,7 @@ export async function currentTargets(): Promise<CurrentTargets> {
   const latestWeight = trend.at(-1)?.trend ?? null;
   const from = addDays(today, -28);
   const end = (await all("endurance_sessions")).filter((s) => s.date >= from).reduce((a, s) => a + s.durationSec / 60, 0);
-  const str = (await all("workout_sessions")).filter((s) => s.date >= from && s.status === "completed").reduce((a, s) => a + (s.durationMin ?? 60), 0);
+  const str = (await all("workout_sessions")).filter((s) => s.date >= from && s.status === "completed").reduce((a, s) => a + (s.durationMin ?? 0), 0);
   const steps = (await all("daily_activity")).filter((d) => d.date >= from && d.steps);
   const est = profile && goals ? estimateEnergy(profile, goals, latestWeight, today, { weeklyExerciseMin: (end + str) / 4, avgSteps: steps.length ? steps.reduce((a, d) => a + (d.steps ?? 0), 0) / steps.length : null }) : null;
   const trendDays = trend.length ? Math.round((Date.parse(today) - Date.parse(trend[0].date)) / 864e5) : 0;

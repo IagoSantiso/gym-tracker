@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import { ActionButton, Card, Icon, Kpi, Modal, SourceBadge } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
 import { MealRow } from "@/components/nutrition/MealCard";
-import { currentMeal } from "@/lib/domain/today";
+import { reconcileCompletedWorkouts } from "@/lib/services/training";
+import { TodayEnergy } from "@/components/nutrition/TodayEnergy";
+import { CompleteWorkoutModal, WorkoutDetails } from "@/components/training/StrengthLog";
+import { findExercise } from "@/lib/domain/training/library";
+import type { PlannedItem, WorkoutSession } from "@/lib/db/types";
 import { SPORT_LABEL } from "@/lib/domain/training/endurance";
 import { stockGrams } from "@/lib/domain/nutrition/kitchen";
 import { buildShoppingList } from "@/lib/domain/nutrition/shopping";
@@ -13,7 +17,7 @@ import { ProposalCard } from "@/components/plan/ProposalCard";
 import { useDiabetes, useLive, useProfile, useTable } from "@/lib/db/hooks";
 import { tbl } from "@/lib/db/db";
 import { active, all, patch } from "@/lib/db/repo";
-import { addDays, formatDateEs, localDate, minutesOfDay, weekStartOf } from "@/lib/domain/time";
+import { addDays, formatDateEs, localDate, weekStartOf } from "@/lib/domain/time";
 import { computeMetrics } from "@/lib/domain/cgm/metrics";
 import { formatGlucose } from "@/lib/domain/units";
 import { SLOT_LABEL, SLOT_ORDER } from "@/lib/domain/nutrition/recipes";
@@ -37,6 +41,8 @@ export function TodayPage() {
   const today = localDate(now, p.timezone);
   const ws = weekStartOf(today);
   const [quick, setQuick] = useState<QuickKind>(null);
+  const [complete,setComplete] = useState<{planned?: PlannedItem; session?: WorkoutSession} | null>(null);
+  const templates = useTable("workout_templates") ?? [];
   const [registerOpen,setRegisterOpen] = useState(false);
   const [adjustOpen,setAdjustOpen] = useState(false);
   const [insightsOpen,setInsightsOpen] = useState(false);
@@ -45,6 +51,7 @@ export function TodayPage() {
   useEffect(() => {
     void (async () => {
       await ensurePlan(today);
+      await reconcileCompletedWorkouts(today);
       // Reglas automáticas: sesiones perdidas de días anteriores → propuesta de recolocar (pendiente de aprobación)
       const items = await weekItems(ws);
       for (const it of items.filter((i) => i.date < today && i.status === "planned" && i.kind !== "rest" && !i.locked)) {
@@ -61,7 +68,7 @@ export function TodayPage() {
   const plan = useLive(async () => (await weekItems(ws)).filter((i) => i.date === today), [ws, today]) ?? [];
   const weekAll = useLive(() => weekItems(ws), [ws]) ?? [];
   const actual = useLive(async () => ({
-    strength: (await tbl("workout_sessions").where("date").equals(today).toArray()).filter(s=>active(s) && s.status==="completed"),
+    strength: (await tbl("workout_sessions").where("date").equals(today).toArray()).filter(s=>active(s) && s.status!=="cancelled"),
     endurance: (await tbl("endurance_sessions").where("date").equals(today).toArray()).filter(active),
   }),[today]);
   const cat = useLive(() => loadCatalog(), []);
@@ -84,8 +91,6 @@ export function TodayPage() {
   const done = weekAll.filter((i) => i.status === "done").length;
   const total = weekAll.filter((i) => i.kind !== "rest" && i.status !== "cancelled").length;
 
-  const next = currentMeal(todayMeals, logs.map(l=>l.slot), minutesOfDay(now,p.timezone));
-  const remainingMeals = todayMeals.filter(m=>m.id!==next?.id && m.status==="planned" && !logs.some(l=>l.slot===m.slot));
   const pendingMovement = plan.filter(i=>i.status!=="done" && i.status!=="cancelled");
   const soon = pantry.filter(p=>(p.quantityKnown===false || p.grams>0 || (p.portions??0)>0) && p.useBy && p.useBy>=today && p.useBy<=addDays(today,2));
   const openQuick = (kind: QuickKind) => {setRegisterOpen(false);setQuick(kind);};
@@ -95,28 +100,40 @@ export function TodayPage() {
       <div><p className="eyebrow">{formatDateEs(today,{weekday:"long",day:"numeric",month:"long"})}</p><h1>Hoy</h1></div>
       <button className="btn primary" onClick={()=>setRegisterOpen(true)}><Icon name="plus" />Registrar</button>
     </header>
+    <TodayEnergy date={today} />
     <div className="today-agenda">
       <section aria-labelledby="today-movement" className="today-movement card">
-        <div className="today-section-head"><h2 id="today-movement">Movimiento</h2><Link className="text-action" href="/plan">Ver semana</Link></div>
-        {pendingMovement.length ? pendingMovement.map(it=><div className="today-session" key={it.id}>
-          <h3>{it.title}</h3><p className="small muted">{it.kind==="rest" ? "Un día para recuperar." : `${it.durationMin} min · ${it.intensity==="hard" ? "intensidad alta" : it.intensity==="moderate" ? "intensidad moderada" : "suave"}`}</p>
-          {it.kind==="strength" && it.templateId ? <Link className="btn" href={`/entrenamiento/sesion?t=${it.templateId}&d=${it.dayIndex}&pi=${it.id}`}>Empezar sesión</Link> : it.kind!=="rest" ? <button className="btn" onClick={()=>setQuick("activity")}>Registrar entrenamiento</button> : null}
-          {it.kind!=="rest" && <details className="quiet-disclosure"><summary>Ver detalles o cambiar el plan</summary><div className="stack">
-            {it.runSpec?.structure && <p className="small">{it.runSpec.structure}</p>}{it.notes && <p className="small">{it.notes}</p>}
-            <Link href="/plan" className="text-action">Ajustar en el plan</Link><ActionButton className="btn sm ghost" onRun={()=>patch("planned_items",it.id,{status:"cancelled"})} success="Sesión cancelada">Hoy no</ActionButton>
-          </div></details>}
-        </div>) : <p className="small muted">{plan.some(i=>i.status==="done") ? "Lo previsto de hoy ya está hecho." : "No tienes entrenamiento pendiente."}</p>}
-        {actual && (actual.strength.length+actual.endurance.length)>0 && <details className="quiet-disclosure"><summary>Entrenamientos registrados hoy <span>{actual.strength.length+actual.endurance.length}</span></summary><ul className="small">{actual.strength.map(w=><li key={w.id}>{w.title}</li>)}{actual.endurance.map(e=><li key={e.id}>{SPORT_LABEL[e.sport]} · {Math.round(e.durationSec/60)} min</li>)}</ul><Link className="text-action" href="/entrenamiento?tab=historial">Ver historial</Link></details>}
+        <div className="today-section-head"><h2 id="today-movement">Ejercicios de hoy</h2><button className="text-action" onClick={()=>setQuick("strength")}>+ Añadir actividad</button></div>
+        {pendingMovement.filter(it=>!actual?.strength.some(s=>s.plannedItemId===it.id || (s.templateId===it.templateId && s.dayIndex===it.dayIndex))).map(it=>{
+          const routine = templates.find(t=>t.id===it.templateId)?.days[it.dayIndex ?? -1];
+          const open = actual?.strength.find(s=>s.templateId===it.templateId && s.dayIndex===it.dayIndex && s.status==="in_progress");
+          return <details className="today-session today-item" key={it.id}>
+            <summary><span><b>{it.title}</b><span className="s">{it.kind==="rest" ? "Recuperación" : `${routine ? `${routine.items.length} ejercicios · ` : ""}${it.durationMin} min previstos`}</span></span><span className="badge">{open ? "Sin finalizar" : "Pendiente"}</span></summary>
+            {routine && <ul className="small">{routine.items.map((e,i)=><li key={i}>{findExercise(e.exerciseId)?.name ?? e.exerciseId} · {e.sets} × {e.repsLabel ?? `${e.repsMin}–${e.repsMax}`}</li>)}</ul>}
+            {it.kind==="strength" ? <div className="row">{it.templateId && <Link className="text-action" href={`/entrenamiento/sesion?t=${it.templateId}&d=${it.dayIndex}&pi=${it.id}`}>{open ? "Continuar registro" : "Abrir sesión"}</Link>}<button className="btn sm primary" onClick={()=>setComplete({planned:it,session:open})}>Ya la he realizado</button></div> : it.kind!=="rest" ? <button className="text-action" onClick={()=>setQuick("activity")}>Registrar actividad realizada</button> : null}
+            {it.notes && <p className="small muted">{it.notes}</p>}
+          </details>;
+        })}
+        {actual?.strength.map(s=><details key={s.id} className="today-session today-item" data-status={s.status}>
+          <summary><span><b>{s.title}</b><span className="s">{s.durationMin ? `${s.durationMin} min` : "Duración sin registrar"}</span></span><span className={`badge ${s.status==="completed" ? "ok" : "warn"}`}>{s.status==="completed" ? "Completada" : "Sin finalizar"}</span></summary>
+          <WorkoutDetails session={s} />
+          {s.status==="in_progress" && <button className="btn sm primary" onClick={()=>setComplete({session:s,planned:plan.find(i=>i.id===s.plannedItemId)})}>Ya la he realizado</button>}
+          <div className="row">{s.status==="completed" && <button className="text-action" onClick={()=>setComplete({session:s})}>Corregir duración</button>}
+          <Link className="text-action" href="/entrenamiento?tab=historial">Ver registro</Link></div>
+        </details>)}
+        {actual?.endurance.map(e=><details key={e.id} className="today-session today-item"><summary><span><b>{SPORT_LABEL[e.sport]}</b><span className="s">{Math.round(e.durationSec/60)} min{e.distanceM ? ` · ${(e.distanceM/1000).toLocaleString("es-ES")} km` : ""}</span></span><span className="badge ok">Completada</span></summary><Link href="/entrenamiento?tab=historial" className="text-action">Ver registro</Link></details>)}
+        {!pendingMovement.length && !actual?.strength.length && !actual?.endurance.length && <p className="small muted">No hay entrenamientos previstos. Puedes añadir lo que hayas hecho.</p>}
+        <div className="today-section-foot"><button className="text-action" onClick={()=>setQuick("activity")}>+ Cardio u otra actividad</button><Link className="text-action" href="/plan">Ver semana</Link></div>
       </section>
       <section aria-labelledby="today-food" className="today-food card">
-        <div className="today-section-head"><h2 id="today-food">Comidas</h2><Link href="/nutricion?tab=menu" className="text-action">Ver menú</Link></div>
-        {cat && next ? <MealRow e={next} cat={cat} featured /> : <div className="today-empty">
-          <p>{logs.length ? "Tus comidas están registradas." : todayMeals.length ? "No quedan comidas previstas." : "Todavía no tienes menú."}</p>
-          {!todayMeals.length && <Link href="/nutricion?tab=menu" className="btn">Preparar mi menú</Link>}
-          <button className="text-action" onClick={()=>setQuick("meal")}>Registrar lo que he comido</button>
-        </div>}
-        {cat && remainingMeals.length>0 && <details className="today-other-meals"><summary>Otras comidas pendientes <span>{remainingMeals.length}</span></summary>{remainingMeals.map(m=><MealRow key={m.id} e={m} cat={cat} />)}</details>}
-        {logs.length>0 && <details className="quiet-disclosure"><summary>Registrado hoy <span>{logs.length}</span></summary><ul className="today-log-list">{logs.map(l=><li key={l.id}><span className="xs dim">{SLOT_LABEL[l.slot]}</span><b>{l.title}</b><span className="small">{Math.round(l.totals.carbsAvailableG)} g hidratos · <SourceBadge source={l.source} /></span></li>)}</ul><Link href="/nutricion?tab=hoy" className="text-action">Ver o corregir registros</Link></details>}
+        <div className="today-section-head"><h2 id="today-food">Comidas de hoy</h2><Link href="/nutricion?tab=menu" className="text-action">Ver menú</Link></div>
+        {cat && todayMeals.filter(m=>!logs.some(l=>l.slot===m.slot)).map(m=><details className="today-item today-meal" key={m.id}>
+          <summary><span><span className="xs dim">{SLOT_LABEL[m.slot]}</span><b>{cat.recipe(m.recipeId)?.name ?? "Comida"}</b></span><span className="badge">{m.status==="planned" ? "Pendiente" : m.status==="eaten" ? "Registrada" : "Omitida"}</span></summary>
+          <MealRow e={m} cat={cat} openPortions />
+        </details>)}
+        {logs.map(l=><details className="today-item" key={l.id}><summary><span><span className="xs dim">{SLOT_LABEL[l.slot]}</span><b>{l.title}</b></span><span className="badge ok">Registrada</span></summary><p className="small">{Math.round(l.totals.kcal)} kcal · {Math.round(l.totals.carbsAvailableG)} g hidratos · <SourceBadge source={l.source} /></p><Link href="/nutricion?tab=hoy" className="text-action">Ver o corregir registro</Link></details>)}
+        {!todayMeals.length && !logs.length && <p className="small muted">Todavía no tienes menú. <Link href="/nutricion?tab=menu">Preparar mi menú</Link></p>}
+        <button className="text-action" onClick={()=>setQuick("meal")}>+ Registrar comida</button>
       </section>
     </div>
     {(soon.length>0 || needed.length>0) && <section className="today-kitchen-note" aria-label="Para las comidas de hoy">
@@ -126,15 +143,16 @@ export function TodayPage() {
     <div className="today-support"><button className="text-action" onClick={()=>setAdjustOpen(true)}><Icon name="chat" />Necesito ajustar el día</button>{dia.enabled && <Link className="text-action" href="/diabetes">Glucosa importada</Link>}</div>
     {dia.enabled && pdfReports[0] && <p className="xs dim today-pdf">Informe PDF · {pdfReports[0].reportSummary?.periodText ?? "periodo no reconocido"}. <Link href="/diabetes?tab=resumen">Ver métricas del informe</Link>. No es tiempo real.</p>}
     {proposals.length>0 && <details className="today-disclosure"><summary>{proposals.length} {proposals.length===1 ? "propuesta para revisar" : "propuestas para revisar"}</summary><div className="stack">{proposals.map(pr=><ProposalCard key={pr.id} p={pr} />)}</div></details>}
-    <details className="today-disclosure" onToggle={e=>setInsightsOpen(e.currentTarget.open)}><summary>Balance y salud</summary>
+    <details className="today-disclosure" onToggle={e=>setInsightsOpen(e.currentTarget.open)}><summary>Nutrición y salud en detalle</summary>
       {insightsOpen && <div className="stack">{cat && <BalanceCard cat={cat} compact />}
         <Card title="Recuperación" sub="Percibida, no médica.">{checkin ? <p className="small">Sueño {checkin.sleepHours??"—"} h · energía {checkin.energy}/5 · fatiga {checkin.fatigue}/5{checkin.pain ? ` · dolor: ${checkin.pain}` : ""}</p> : <button className="btn" onClick={()=>setQuick("checkin")}>Hacer check-in</button>}<p className="small muted">Pasos registrados: {steps?.steps?.toLocaleString("es-ES")??"sin datos"} · sesiones esta semana: {done}/{total}</p></Card>
         {dia.enabled && <Card title="Glucosa importada">{glucose ? <><div className="grid g3"><Kpi value={glucose.m.n ? `${Math.round(glucose.m.pct.in)} %` : "—"} label="en rango (últimas 24 h de datos)" source="calculated" /><Kpi value={glucose.m.mean ? formatGlucose(glucose.m.mean,dia.unit) : "—"} label="media" source="calculated" /></div><p className="xs dim">Hasta {new Date(glucose.last.ts).toLocaleString("es-ES")} · cobertura {Math.round(glucose.m.coveragePct)} % · no es tiempo real. Para decisiones usa tu lector/app oficial.</p></> : <p className="small">{pdfReports[0] ? "El PDF contiene un resumen, no lecturas individuales." : "No hay lecturas importadas."}</p>}<Link className="text-action" href="/diabetes">Ver datos</Link> · <Link className="text-action" href="/diabetes?tab=protocolo">Mi protocolo</Link></Card>}
       </div>}
     </details>
     {(!p.onboardingCompletedAt || p.draft) && <details className="quiet-disclosure today-setup"><summary>Personalizar mi día</summary><p className="small muted">Tu perfil está en borrador. Completarlo ayuda a personalizar el plan y el menú.</p><Link href="/onboarding" className="text-action">Revisar mi perfil</Link></details>}
-    <Modal open={registerOpen} onClose={()=>setRegisterOpen(false)} title="¿Qué quieres registrar?"><div className="register-choices">{([{kind:"meal",label:"Comida",icon:"utensils"},{kind:"activity",label:"Entrenamiento",icon:"run"},{kind:"glucose",label:"Glucemia o evento",icon:"drop"},{kind:"weight",label:"Peso",icon:"scale"},{kind:"checkin",label:"Cómo me encuentro",icon:"bed"},{kind:"note",label:"Nota",icon:"note"}] as const).map(a=><button key={a.kind} onClick={()=>openQuick(a.kind)}><Icon name={a.icon} />{a.label}</button>)}</div></Modal>
+    <Modal open={registerOpen} onClose={()=>setRegisterOpen(false)} title="¿Qué quieres registrar?"><div className="register-choices">{([{kind:"meal",label:"Comida",icon:"utensils"},{kind:"strength",label:"Fuerza / abdominales",icon:"dumbbell"},{kind:"activity",label:"Cardio / otra actividad",icon:"run"},{kind:"glucose",label:"Glucemia o evento",icon:"drop"},{kind:"weight",label:"Peso",icon:"scale"},{kind:"checkin",label:"Cómo me encuentro",icon:"bed"},{kind:"note",label:"Nota",icon:"note"}] as const).map(a=><button key={a.kind} onClick={()=>openQuick(a.kind)}><Icon name={a.icon} />{a.label}</button>)}</div></Modal>
     <Modal open={adjustOpen} onClose={()=>setAdjustOpen(false)} title="Ajustar mi día"><AdjustDayCard embedded /></Modal>
+    {complete && <CompleteWorkoutModal planned={complete.planned} session={complete.session} onClose={()=>setComplete(null)} />}
     <QuickLog kind={quick} onClose={()=>setQuick(null)} />
   </div>;
 }
