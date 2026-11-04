@@ -58,13 +58,16 @@ const shot = (name) => page.screenshot({ path: join(SHOTS, `${name}.png`), fullP
 try {
   /* Hoy */
   await page.goto(BASE + "/", { waitUntil: "networkidle" });
-  await page.getByText("Esto es lo de hoy").waitFor();
+  await page.getByRole("heading", {name:"Hoy",exact:true}).waitFor();
   ok(true, "Hoy carga");
-  await page.getByText("Qué toca hoy").waitFor();
+  await page.getByRole("heading", {name:"Movimiento",exact:true}).waitFor();
+  await page.getByText("Personalizar mi día", {exact:true}).click();
   ok(await page.getByText("Tu perfil está en borrador").isVisible(), "aviso de perfil en borrador");
+  await page.getByText("Personalizar mi día", {exact:true}).click();
   await shot("01-hoy");
 
   /* Registrar peso desde acción rápida */
+  await page.getByRole("button", { name: "Registrar",exact:true }).click();
   await page.getByRole("button", { name: "Peso" }).click();
   await page.getByLabel("Peso en kg").fill("82,4");
   await page.getByRole("button", { name: "Guardar" }).click();
@@ -72,7 +75,8 @@ try {
   ok(true, "registro rápido de peso");
 
   /* Check-in → recuperación */
-  await page.getByRole("button", { name: "¿Cómo estás?" }).click();
+  await page.getByRole("button", { name: "Registrar",exact:true }).click();
+  await page.getByRole("button", { name: "Cómo me encuentro",exact:true }).click();
   await page.getByRole("button", { name: "Guardar" }).click();
   await page.getByText("Check-in guardado").waitFor();
   ok(true, "check-in de recuperación");
@@ -109,9 +113,10 @@ try {
   const gen = page.getByRole("button", { name: /Generar menú|Regenerar/ });
   await gen.first().click();
   await page.waitForTimeout(1500);
-  const meals = await page.locator(".li").count();
-  ok(meals >= 21, `menú semanal generado (${meals} comidas)`);
-  await page.getByRole("button", { name: "Cambiar" }).first().click();
+  const meals = await page.locator(".menu-day .meal-card").count();
+  ok(meals >= 3 && meals <= 6 && await page.locator(".day-picker [role=tab]").count() === 7, `menú generado, un día visible (${meals} comidas)`);
+  await page.getByRole("button", { name: "Cambiar",exact:true }).first().click();
+  await page.getByRole("button", {name:/Otro plato/}).click();
   await page.locator("dialog.modal").getByRole("button", { name: "Elegir" }).first().click();
   await page.getByText("Comida cambiada").waitFor();
   ok(true, "sustitución de comida");
@@ -127,6 +132,7 @@ try {
     await page.getByText("Comida registrada").waitFor();
   }
   ok(await page.getByText("Registrado hoy").isVisible(), "comida marcada como hecha");
+  if (!(await page.locator(".meal-details").first().evaluate(e=>e.open))) await page.locator(".meal-details > summary").first().click();
   ok(await page.locator("details.portions summary").first().isVisible().catch(() => false) && /\d+ g/.test(await page.locator("details.portions").first().textContent()), "cantidades por ingrediente en las comidas de hoy");
   ok(await page.getByText("Balance del día").isVisible(), "balance del día visible");
   await shot("05b-balance");
@@ -189,7 +195,7 @@ try {
   await Promise.all([page.waitForURL(BASE + "/"), page.getByRole("button", { name: "Restaurar copia pegada" }).click()]);
   await page.goto(BASE + "/nutricion?tab=menu", { waitUntil: "networkidle" });
   await page.waitForTimeout(800);
-  ok((await page.locator(".li").count()) >= 21, "restaurar copia pegada conserva el menú");
+  ok((await page.locator(".menu-day .meal-card").count()) >= 3 && await page.locator(".day-picker [role=tab]").count() === 7, "restaurar copia pegada conserva el menú por días");
 
   /* Modo avión */
   await page.goto(BASE + "/", { waitUntil: "networkidle" });
@@ -216,6 +222,7 @@ try {
   await page.waitForTimeout(800);
   ok(await page.getByText(/82,4 kg/).first().isVisible(), "OFFLINE: los datos locales siguen disponibles");
   await page.goto(BASE + "/", { waitUntil: "load" });
+  await page.getByRole("button", { name: "Registrar",exact:true }).click();
   await page.getByRole("button", { name: "Nota" }).click();
   await page.getByRole("button", { name: "Guardar" }).click();
   await page.getByText("Nota guardada").waitFor();

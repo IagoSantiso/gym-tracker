@@ -1,5 +1,13 @@
 # Estado del proyecto — NEXO v1
 
+## Hoy y simplificación — 2026-11-04
+
+- Inicio centrado en movimiento y comidas, un único registro y detalles bajo demanda.
+- Cambios de ingrediente/plato accesibles desde Hoy; opciones locales y previsualizaciones conservadas.
+- Menú por día, resumen semanal desplegable e impresión completa; Cocina con tres destinos principales.
+- Navegación móvil simplificada, controles de teclado, temas y tamaños de pantalla verificados.
+- Validación: 163 tests unitarios, build, seguridad y cinco recorridos E2E. Sin migraciones. Detalles: `docs/TODAY_UX.md`.
+
 ## Cocina personal — 2026-11-04
 
 - Mi cocina: nevera, congelador, despensa y raciones preparadas; cantidades conocidas/desconocidas, fechas, edición manual y contexto de compra local.

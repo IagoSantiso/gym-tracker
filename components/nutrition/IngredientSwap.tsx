@@ -10,49 +10,52 @@ import { applyIngredientVariant } from "@/lib/services/kitchen";
 import { loadDayBalance } from "@/lib/services/balance";
 import type { Catalog } from "@/lib/services/nutrition";
 
-export function IngredientSwap({ entry, cat, onClose, initialIndex = 0 }: { initialIndex?: number; entry: MealEntry; cat: Catalog; onClose: () => void }) {
-  const prefs = usePreferences();
-  const stock = useTable("pantry_items") ?? [];
-  const balance = useLive(() => loadDayBalance(entry.date), [entry.date]);
-  const [index,setIndex] = useState(initialIndex);
-  const [expanded,setExpanded] = useState(false);
-  const [query,setQuery] = useState("");
-  const [choice,setChoice] = useState<string | null>(null);
-  const [ownGrams,setOwnGrams] = useState("");
-  const recipe = cat.recipe(entry.recipeId);
-  if (!recipe) return null;
-  const options = ingredientAlternatives(recipe, index, cat.foods, entry.servings, {
-    allergens: [...prefs.allergies, ...prefs.intolerances], excludedFoods: [...prefs.excludedFoods, ...(prefs.foodContext?.avoid ?? [])], stock, date: entry.date,
-    projected: balance?.projected, targets: balance?.targets,
-  });
-  const selected = options.find(o => o.food.id === choice);
-  const visible = options.filter(o => o.food.name.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es"))).slice(0, expanded ? 100 : 5);
-  const ingredients = selected ? selected.ingredients.map((i,n) => n === index ? { ...i, grams: Number(ownGrams) * recipe.servings / entry.servings } : i) : recipe.ingredients;
-  const old = recipeNutrition(recipe.ingredients, cat.food, entry.servings, recipe.servings).totals;
-  const finalIngredients = choice === "same" ? recipe.ingredients.map((i,n) => n === index ? { ...i, grams: Number(ownGrams) * recipe.servings / entry.servings } : i) : ingredients;
-  const totals = recipeNutrition(finalIngredients, cat.food, entry.servings, recipe.servings).totals;
-  const oldName = cat.food(recipe.ingredients[index].foodId)?.name ?? "Ingrediente";
-  const delta = (v: number) => `${v >= 0 ? "+" : ""}${Math.round(v)}`;
-  return <Modal open title="Variar este plato" onClose={onClose}>
-    <div className="stack"><p className="small">Elige un ingrediente. Las alternativas y cantidades se calculan sin usar IA.</p>
-      <div className="ingredient-chips">{recipe.ingredients.map((i,n) => <button className={n === index ? "chip active" : "chip"} aria-pressed={n === index} key={n} onClick={() => { setIndex(n); setChoice(null); setQuery(""); }}>{cat.food(i.foodId)?.name ?? i.foodId}</button>)}</div>
-      <Field label={`Cantidad de ${oldName} en este plato (g)`}><input type="number" min="1" max="2000" value={choice === "same" ? ownGrams : Math.round(recipe.ingredients[index].grams * entry.servings / recipe.servings)} onChange={e => {setChoice("same");setOwnGrams(e.target.value);}} /></Field>
-      <h3>En lugar de este ingrediente</h3>
-      {expanded && <Field label="Buscar alternativas"><input value={query} onChange={e => setQuery(e.target.value)} /></Field>}
-      {!visible.length && <Notice>No hay alternativas compatibles en el catálogo. Puedes añadir un producto por su etiqueta o pedir ayuda al asistente.</Notice>}
-      <div className="list">{visible.map(o => <button className={choice === o.food.id ? "li ingredient-option selected" : "li ingredient-option"} key={o.food.id} onClick={() => { setChoice(o.food.id); setOwnGrams(String(Math.round(o.grams * entry.servings / recipe.servings))); }}>
-        <span className="grow"><b>{o.food.name}</b><span className="s">{Math.round(o.grams * entry.servings / recipe.servings)} g · {o.food.state === "raw" ? "peso en crudo" : o.food.state === "cooked" ? "peso cocinado" : "tal como se vende"}</span><span className="xs">{o.reasons.join(" · ")}</span><span className="s">{delta(o.delta.kcal)} kcal · {delta(o.delta.carbsAvailableG)} g hidratos</span></span>
-      </button>)}</div>
-      {!expanded && <button className="btn" onClick={() => setExpanded(true)}>Ver más alternativas del catálogo</button>}
-      {selected && <><Field label="Cantidad elegida para tu plato (g)"><input type="number" min="1" max="2000" value={ownGrams} onChange={e => setOwnGrams(e.target.value)} /></Field>
-        <div className="swap-preview" aria-live="polite"><b>Así queda tu plato</b><p>{Math.round(totals.kcal)} kcal · {Math.round(totals.proteinG)} g proteína · {Math.round(totals.carbsAvailableG)} g hidratos · {Math.round(totals.fatG)} g grasa</p>
-        <p className="small">Cambio: {delta(totals.kcal-old.kcal)} kcal · {delta(totals.carbsAvailableG-old.carbsAvailableG)} g hidratos · {delta(totals.fatG-old.fatG)} g grasa</p>
-        {balance && <p className="small">Día previsto con este cambio: {Math.round(balance.projected.kcal + totals.kcal - old.kcal)} kcal · {Math.round(balance.projected.proteinG + totals.proteinG - old.proteinG)} g proteína · {Math.round(balance.projected.fatG + totals.fatG - old.fatG)} g grasa. {balance.exerciseToday.map(e => e.label).join(" · ")}</p>}</div>
-        {Math.abs(totals.carbsAvailableG-old.carbsAvailableG) > 5 && <Notice>Este cambio modifica los hidratos de la comida. Revísalo con tu pauta personal antes de aplicarlo.</Notice>}
-        {selected.cookingChanged && <Notice>Se guardará una receta con preparación por componentes adaptada a los ingredientes elegidos. Revisa el envase y los pasos nuevos; no se reutilizan los tiempos del ingrediente anterior.</Notice>}
-        <ActionButton className="btn primary" disabled={!ownGrams || Number(ownGrams)<=0 || Number(ownGrams)>2000 || !Number.isFinite(Number(ownGrams))} onRun={async () => { await applyIngredientVariant(entry.id, entry.recipeId, ingredients, `${recipe.name} · con ${selected.food.name}`, variantSteps(ingredients, cat.food)); onClose(); }} success="Variante guardada para este día">Aplicar a esta comida</ActionButton></>}
-      {choice === "same" && <><Notice>Nuevo plato: {Math.round(totals.kcal)} kcal · {Math.round(totals.carbsAvailableG)} g hidratos. Cambio de hidratos: {delta(totals.carbsAvailableG-old.carbsAvailableG)} g.</Notice><ActionButton className="btn primary" disabled={!ownGrams || Number(ownGrams)<=0 || Number(ownGrams)>2000} onRun={async () => { await applyIngredientVariant(entry.id, entry.recipeId, recipe.ingredients.map((i,n) => n === index ? { ...i, grams: Number(ownGrams)*recipe.servings/entry.servings, note: null } : i), `${recipe.name} · a mi medida`, recipe.steps); onClose(); }} success="Cantidad personalizada">Guardar mi cantidad</ActionButton></>}
-      <Link className="btn ghost" href={"/asistente?q=" + encodeURIComponent(`Quiero variar la comida ${entry.slot} del ${entry.date}: ${recipe.name}. No tengo ${oldName}. Consulta mi inventario, preferencias de compra y balance del día para proponer una variante y lo mínimo que comprar.`)}>Buscar otra solución con el asistente</Link>
+export function IngredientSwap({entry,cat,onClose,initialIndex=0}: {initialIndex?:number;entry:MealEntry;cat:Catalog;onClose:()=>void}) {
+  const prefs=usePreferences();
+  const stock=useTable("pantry_items")??[];
+  const balance=useLive(()=>loadDayBalance(entry.date),[entry.date]);
+  const [index,setIndex]=useState(initialIndex);
+  const [expanded,setExpanded]=useState(false);
+  const [query,setQuery]=useState("");
+  const [choice,setChoice]=useState<string|null>(null);
+  const [grams,setGrams]=useState("");
+  const recipe=cat.recipe(entry.recipeId);
+  if(!recipe)return null;
+  const options=ingredientAlternatives(recipe,index,cat.foods,entry.servings,{allergens:[...prefs.allergies,...prefs.intolerances],excludedFoods:[...prefs.excludedFoods,...(prefs.foodContext?.avoid??[])],stock,date:entry.date,projected:balance?.projected,targets:balance?.targets});
+  const selected=options.find(o=>o.food.id===choice);
+  const same=choice==="same";
+  const ingredients=(selected?.ingredients??recipe.ingredients).map((i,n)=>n===index && (selected||same)?{...i,grams:Number(grams)*recipe.servings/entry.servings,note:null}:i);
+  const before=recipeNutrition(recipe.ingredients,cat.food,entry.servings,recipe.servings).totals;
+  const after=recipeNutrition(ingredients,cat.food,entry.servings,recipe.servings).totals;
+  const oldName=cat.food(recipe.ingredients[index].foodId)?.name??"Ingrediente";
+  const actualGrams=Math.round(recipe.ingredients[index].grams*entry.servings/recipe.servings);
+  const visible=options.filter(o=>o.food.name.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es"))).slice(0,expanded?100:4);
+  const delta=(v:number)=>`${v>=0?"+":""}${Math.round(v)}`;
+  const valid=grams!=="" && Number.isFinite(Number(grams)) && Number(grams)>0 && Number(grams)<=2000;
+  const reset=()=>{setChoice(null);setGrams("");};
+  return <Modal open title="Cambiar ingrediente" onClose={onClose} footer={selected||same ? <div className="swap-footer"><ActionButton className="btn primary" disabled={!valid} onRun={async()=>{await applyIngredientVariant(entry.id,entry.recipeId,ingredients,same?`${recipe.name} · a mi medida`:`${recipe.name} · con ${selected!.food.name}`,same?recipe.steps:variantSteps(ingredients,cat.food));onClose();}} success="Variante guardada para este día">Aplicar a esta comida</ActionButton></div> : undefined}>
+    <div className="stack">
+      <Field label="Ingrediente a cambiar"><select value={index} onChange={e=>{setIndex(Number(e.target.value));reset();setQuery("");}}>{recipe.ingredients.map((i,n)=><option key={n} value={n}>{cat.food(i.foodId)?.name??i.foodId}</option>)}</select></Field>
+      <p className="xs dim">Cantidad actual: {actualGrams} g. Las alternativas se calculan sin IA.</p>
+      {selected||same ? <>
+        <div className="swap-selection"><span className="xs dim">{same?"Mismo ingrediente":"En su lugar"}</span><b>{selected?.food.name??oldName}</b><button className="text-action" onClick={reset}>Elegir otra alternativa</button></div>
+        <Field label="Cantidad para tu plato (g)"><input type="number" min="1" max="2000" value={grams} onChange={e=>setGrams(e.target.value)} /></Field>
+        <div className="swap-preview" aria-live="polite"><b>Así queda tu plato</b><p>{Math.round(after.carbsAvailableG)} g hidratos · {Math.round(after.kcal)} kcal</p><p className="small">Cambio: {delta(after.carbsAvailableG-before.carbsAvailableG)} g hidratos · {delta(after.kcal-before.kcal)} kcal{Math.abs(after.fatG-before.fatG)>=5?` · ${delta(after.fatG-before.fatG)} g grasa`:""}</p></div>
+        {Math.abs(after.carbsAvailableG-before.carbsAvailableG)>5 && <Notice>El cambio modifica los hidratos. Revísalo con tu pauta personal antes de aplicarlo.</Notice>}
+        {after.missing.length>0 && <p className="xs dim">Algunos datos nutricionales están incompletos.</p>}
+        <details className="quiet-disclosure"><summary>Efecto en el día y preparación</summary><div className="stack"><p className="small">Plato: {Math.round(after.proteinG)} g proteína · {Math.round(after.fatG)} g grasa.</p>
+          {balance && <p className="small">Día previsto: {Math.round(balance.projected.kcal+after.kcal-before.kcal)} kcal · {Math.round(balance.projected.proteinG+after.proteinG-before.proteinG)} g proteína · {Math.round(balance.projected.fatG+after.fatG-before.fatG)} g grasa. {balance.exerciseToday.map(e=>e.label).join(" · ")}</p>}
+          {!same && <><p className="small muted">La preparación cambia con los ingredientes. Revisa las indicaciones del producto.</p><ol className="small recipe-steps">{variantSteps(ingredients,cat.food).map((step,i)=><li key={i}>{step}</li>)}</ol></>}
+        </div></details>
+      </> : <>
+        <h3>Alternativas</h3>
+        {expanded && <Field label="Buscar alternativas"><input value={query} onChange={e=>setQuery(e.target.value)} /></Field>}
+        {!visible.length && <p className="small muted">No hay alternativas compatibles en el catálogo.</p>}
+        <div className="list">{visible.map(o=><button className="ingredient-option" key={o.food.id} onClick={()=>{setChoice(o.food.id);setGrams(String(Math.round(o.grams*entry.servings/recipe.servings)));}}><span className="grow"><b>{o.food.name}</b><span className="s">{Math.round(o.grams*entry.servings/recipe.servings)} g · {o.food.state==="raw"?"en crudo":o.food.state==="cooked"?"cocinado":"tal como se vende"}{o.enough?" · lo tienes":""}</span><span className="xs dim">{delta(o.delta.carbsAvailableG)} g hidratos · {delta(o.delta.kcal)} kcal</span></span><span aria-hidden>→</span></button>)}</div>
+        {!expanded && options.length>4 && <button className="text-action" onClick={()=>setExpanded(true)}>Ver más alternativas</button>}
+        <button className="text-action" onClick={()=>{setChoice("same");setGrams(String(actualGrams));}}>Ajustar solo la cantidad</button>
+        <details className="quiet-disclosure"><summary>No encuentro lo que necesito</summary><Link className="text-action" href={"/asistente?q="+encodeURIComponent(`Quiero variar la comida ${entry.slot} del ${entry.date}: ${recipe.name}. No tengo ${oldName}. Consulta mi inventario, preferencias de compra y balance del día para proponer una variante.`)}>Pedir ayuda al asistente</Link></details>
+      </>}
     </div>
   </Modal>;
 }
