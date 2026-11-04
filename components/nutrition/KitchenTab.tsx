@@ -25,10 +25,10 @@ export function KitchenTab({ cat }: { cat: Catalog }) {
   const rp = useTable("recipe_prefs") ?? [];
   const ready = eligibleRecipes(cat.recipes, cat.food, { excludedAllergens: [...prefs.allergies, ...prefs.intolerances], excludedFoods: [...prefs.excludedFoods, ...(prefs.foodContext?.avoid ?? [])], blacklist: rp.filter(p => p.blacklisted || p.frequency === "never").map(p => p.recipeId) }).map(r => ({ r, c: coverage(r.ingredients, stockGrams(stock, today), 1 / r.servings) })).filter(x => x.c.missing.length <= 1 && x.c.ratio > 0).slice(0, 6);
   return <div className="stack">
-    <Card className="kitchen-hero" title="Tu cocina, punto de partida" sub="Lo que hay en casa orienta el menú y reduce la compra.">
-      <div className="row"><button className="btn primary" onClick={() => setEditor("new")}>Añadir alimento o plato preparado</button>
+    <Card className="kitchen-hero" sub="Nevera, congelador y despensa.">
+      <div className="row"><button className="btn primary" onClick={() => setEditor("new")}>Añadir alimento</button>
         <Link className="btn" href={"/asistente?q=" + encodeURIComponent("Quiero actualizar mi nevera virtual con estas fotos. Identifica solo lo visible y usa propose_pantry_items para proponer el inventario. Las cantidades que no se vean quedan desconocidas. Voy a adjuntar las fotos.")}>Añadir con fotos</Link></div>
-      <p className="xs dim">La foto se revisa con el asistente y se guarda al aceptar su propuesta. Puedes adjuntar varias fotos y corregir después cada producto.</p>
+      <p className="xs dim">Revisa los alimentos de la foto antes de guardarlos.</p>
     </Card>
     <div className="row wrap"><Field label="Buscar en casa"><input value={q} onChange={e => setQ(e.target.value)} placeholder="Tomate, huevos, arroz…" /></Field>
       <Field label="Dónde"><select value={filter} onChange={e => setFilter(e.target.value)}><option value="all">Todo</option>{Object.entries(LOCATIONS).map(([id, name]) => <option key={id} value={id}>{name}</option>)}<option value="soon">Fecha alcanzada</option></select></Field></div>

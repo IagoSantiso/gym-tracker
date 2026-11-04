@@ -14,14 +14,14 @@ export const NAV: { href: string; label: string; short: string; icon: IconName }
   { href: "/", label: "Hoy", short: "Hoy", icon: "home" },
   { href: "/plan", label: "Plan", short: "Plan", icon: "calendar" },
   { href: "/entrenamiento", label: "Entrenamiento", short: "Entreno", icon: "dumbbell" },
-  { href: "/nutricion", label: "Nutrición", short: "Comida", icon: "utensils" },
+  { href: "/nutricion", label: "Cocina", short: "Cocina", icon: "utensils" },
   { href: "/diabetes", label: "Diabetes", short: "Glucosa", icon: "drop" },
   { href: "/progreso", label: "Progreso", short: "Progreso", icon: "chart" },
   { href: "/asistente", label: "Asistente", short: "IA", icon: "chat" },
   { href: "/ajustes", label: "Ajustes", short: "Ajustes", icon: "settings" },
 ];
-const PRIMARY = NAV.slice(0, 5);
-const MORE = NAV.slice(5);
+const PRIMARY = [NAV[0], NAV[1], NAV[3], NAV[4]];
+const MORE = NAV.filter(n => !PRIMARY.some(p => p.href === n.href));
 
 const isActive = (path: string, href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
 
@@ -58,6 +58,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
   useEffect(() => setMoreOpen(false), [path]);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { setMoreOpen(false); document.querySelector<HTMLButtonElement>('[aria-controls="more-sheet"]')?.focus(); } };
+    const outside = (e: PointerEvent) => { if (e.target instanceof Element && !e.target.closest('#more-sheet, [aria-controls="more-sheet"]')) setMoreOpen(false); };
+    document.addEventListener("keydown",key);
+    document.addEventListener("pointerdown",outside);
+    return () => { document.removeEventListener("keydown",key); document.removeEventListener("pointerdown",outside); };
+  }, [moreOpen]);
 
   const immersive = path.startsWith("/entrenamiento/sesion") || path.startsWith("/informe");
   const moreActive = MORE.some((n) => isActive(path, n.href));
@@ -112,15 +120,15 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {n.short}
                 </Link>
               ))}
-              <button aria-expanded={moreOpen || moreActive} aria-controls="more-sheet" onClick={() => setMoreOpen((v) => !v)}>
+              <button aria-expanded={moreOpen} aria-controls="more-sheet" data-active={moreActive || undefined} onClick={() => setMoreOpen((v) => !v)}>
                 <Icon name="more" />
                 Más
               </button>
             </nav>
             {moreOpen && (
-              <div className="more-sheet" id="more-sheet" role="menu">
+              <div className="more-sheet" id="more-sheet" aria-label="Más secciones">
                 {MORE.map((n) => (
-                  <Link key={n.href} href={n.href} role="menuitem" aria-current={isActive(path, n.href) ? "page" : undefined}>
+                  <Link key={n.href} href={n.href} aria-current={isActive(path, n.href) ? "page" : undefined}>
                     <Icon name={n.icon} />
                     {n.label}
                   </Link>

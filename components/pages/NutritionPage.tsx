@@ -1,8 +1,11 @@
 "use client";
 import { KitchenTab } from "@/components/nutrition/KitchenTab";
 import { deleteFoodLog } from "@/lib/services/kitchen";
-import { IngredientSwap } from "@/components/nutrition/IngredientSwap";
-import { useMemo, useState } from "react";
+import { MealRow } from "@/components/nutrition/MealCard";
+import { NutrientLine } from "@/components/nutrition/MealDetails";
+export { NutrientLine, Portions } from "@/components/nutrition/MealDetails";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { ActionButton, Card, Empty, Field, Icon, Kpi, Modal, Notice, NumInput, PageHead, SourceBadge, Tabs, confirmAction, useTabParam, useToast } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
 import { useLive, usePreferences, useTable } from "@/lib/db/hooks";
@@ -11,13 +14,12 @@ import { active, all, patch, put, remove } from "@/lib/db/repo";
 import { absorptionHint, cookedFromRaw, fmtNutrient, recipeNutrition, type FoodLike } from "@/lib/domain/nutrition/calc";
 import { SECTION_LABEL, SEED_SOURCES, ALLERGENS } from "@/lib/domain/nutrition/foods";
 import { SLOT_LABEL, SLOT_ORDER } from "@/lib/domain/nutrition/recipes";
-import { eligibleRecipes, swapOptions } from "@/lib/domain/nutrition/menu";
+import { eligibleRecipes } from "@/lib/domain/nutrition/menu";
 import { quantityLabel, toCsv } from "@/lib/domain/nutrition/shopping";
-import { portionLines } from "@/lib/domain/nutrition/portions";
 import { addCompensationToPlan, loadDayBalance } from "@/lib/services/balance";
-import { addDays, formatDateEs, localDate, weekStartOf } from "@/lib/domain/time";
+import { addDays, formatDateEs, localDate, weekStartOf, weekdayOf } from "@/lib/domain/time";
 import type { Food, MealEntry, MealSlot, NutrientTotals, ShopSection } from "@/lib/db/types";
-import { generateWeekMenu, loadCatalog, markEaten, refreshShoppingList, saveRecipe, setRecipePref, swapMeal, restoreMeal, weekMeals, lookupBarcode, type Catalog } from "@/lib/services/nutrition";
+import { generateWeekMenu, loadCatalog, refreshShoppingList, saveRecipe, setRecipePref, swapMeal, weekMeals, lookupBarcode, type Catalog } from "@/lib/services/nutrition";
 import { currentTargets } from "@/lib/services/targets";
 import { download } from "@/lib/services/data";
 import { createProposal } from "@/lib/services/plan";
@@ -26,21 +28,27 @@ const TABS = ["hoy", "menu", "cocina", "compra", "recetas", "alimentos", "objeti
 type Tab = (typeof TABS)[number];
 
 export function NutritionPage() {
-  const [tab, setTab] = useTabParam<Tab>("hoy", TABS);
+  const [tab, setTab] = useTabParam<Tab>("cocina", TABS);
   const [quick, setQuick] = useState<QuickKind>(null);
+  const toolsRef = useRef<HTMLDetailsElement>(null);
+  useEffect(()=>{
+    const outside=(e:PointerEvent)=>{if(e.target instanceof Node && !toolsRef.current?.contains(e.target)) toolsRef.current?.removeAttribute("open");};
+    const escape=(e:KeyboardEvent)=>{if(e.key==="Escape" && toolsRef.current?.open){toolsRef.current.open=false;toolsRef.current.querySelector("summary")?.focus();}};
+    document.addEventListener("pointerdown",outside);document.addEventListener("keydown",escape);
+    return ()=>{document.removeEventListener("pointerdown",outside);document.removeEventListener("keydown",escape);};
+  },[]);
   const cat = useLive(() => loadCatalog(), []);
   return (
     <>
-      <PageHead eyebrow="Nutrición" title="Comer bien, sin extremos" actions={<button className="btn" onClick={() => setQuick("meal")}><Icon name="plus" />Registrar comida</button>}>
-        Menús con cantidades en gramos, hidratos por comida y lista de la compra. Los valores son cálculos sobre datos de referencia: orientativos, no indicaciones de dosis.
-      </PageHead>
-      <Tabs label="Nutrición" value={tab} onChange={setTab} tabs={[
-        { id: "hoy", label: "Hoy" }, { id: "cocina", label: "Mi cocina" }, { id: "menu", label: "Menú semanal" }, { id: "compra", label: "Lista de la compra" },
-        { id: "recetas", label: "Recetas" }, { id: "alimentos", label: "Alimentos" }, { id: "objetivos", label: "Objetivos" },
-      ]} />
+      <div className="nutrition-back"><Link href="/">← Volver a Hoy</Link></div>
+      <PageHead eyebrow="Cocina" title={{hoy:"Balance y registros",menu:"Tu menú",cocina:"Mi cocina",compra:"Lista de la compra",recetas:"Recetas",alimentos:"Alimentos",objetivos:"Objetivos"}[tab]} />
+      <div className="nutrition-nav">
+        <Tabs label="Cocina" value={tab} onChange={setTab} tabs={[{id:"menu",label:"Menú"},{id:"cocina",label:"Mi cocina"},{id:"compra",label:"Compra"}]} />
+        <details className="nutrition-tools" ref={toolsRef}><summary>Más</summary><div className="nutrition-tools-list">{([{id:"recetas",label:"Recetas"},{id:"alimentos",label:"Alimentos"},{id:"objetivos",label:"Objetivos"},{id:"hoy",label:"Balance y registros"}] as const).map(t=><button key={t.id} aria-current={tab===t.id ? "page" : undefined} onClick={e=>{setTab(t.id);e.currentTarget.closest("details")?.removeAttribute("open");}}>{t.label}</button>)}</div></details>
+      </div>
       {!cat ? <div className="empty-state">Cargando…</div> : (
         <>
-          {tab === "hoy" && <TodayTab cat={cat} />}
+          {tab === "hoy" && <><button className="btn" onClick={()=>setQuick("meal")}>Registrar comida</button><TodayTab cat={cat} /></>}
           {tab === "menu" && <MenuTab cat={cat} />}
           {tab === "cocina" && <KitchenTab cat={cat} />}
           {tab === "compra" && <ShoppingTab cat={cat} />}
@@ -51,100 +59,6 @@ export function NutritionPage() {
       )}
       <QuickLog kind={quick} onClose={() => setQuick(null)} />
     </>
-  );
-}
-
-export function NutrientLine({ t, compact }: { t: NutrientTotals; compact?: boolean }) {
-  return (
-    <span className="small">
-      <b>{fmtNutrient("carbsAvailableG", t.carbsAvailableG)} g</b> hidratos disp. · {fmtNutrient("kcal", t.kcal)} kcal · {fmtNutrient("proteinG", t.proteinG)} g prot.
-      {!compact && <> · {fmtNutrient("fiberG", t.fiberG)} g fibra · {fmtNutrient("fatG", t.fatG)} g grasa · sal {fmtNutrient("saltG", t.saltG)} g</>}
-      {t.missing.length > 0 && <span className="xs dim" title={t.missing.join(", ")}> · datos incompletos</span>}
-    </span>
-  );
-}
-
-export function Portions({ recipeIngredients, cat, servings, baseServings, open, onIngredient }: { onIngredient?: (index: number) => void; recipeIngredients: { foodId: string; grams: number; note?: string | null }[]; cat: Catalog; servings: number; baseServings: number; open?: boolean }) {
-  const lines = portionLines(recipeIngredients, cat.food, servings, baseServings);
-  if (!lines.length) return null;
-  return (
-    <details open={open} className="portions">
-      <summary className="xs" style={{ cursor: "pointer", fontWeight: 650 }}>Cantidades ({lines.length} ingredientes)</summary>
-      <ul className="small" style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-        {lines.map((l, i) => (
-          <li key={`${l.foodId}-${i}`}>
-            <b>{l.label}</b> {onIngredient ? <button className="ingredient-link" onClick={() => onIngredient(i)}>{l.name.toLowerCase()}</button> : l.name.toLowerCase()}
-            {l.stateNote && <span className="xs dim"> · {l.stateNote}{l.cookedG ? ` (≈ ${l.cookedG} g cocinado)` : ""}</span>}
-            {l.note && <span className="xs dim"> · {l.note}</span>}
-          </li>
-        ))}
-      </ul>
-    </details>
-  );
-}
-
-function MealRow({ e, cat, onSwap, openPortions }: { e: MealEntry; cat: Catalog; onSwap: () => void; openPortions?: boolean }) {
-  const toast = useToast();
-  const [ingredientsOpen, setIngredientsOpen] = useState<number | null>(null);
-  const r = cat.recipe(e.recipeId);
-  if (!r) return null;
-  const t = recipeNutrition(r.ingredients, cat.food, e.servings, r.servings).totals;
-  const hint = absorptionHint(t);
-  return (
-    <div className="li wrap" style={{ alignItems: "flex-start", opacity: e.status === "skipped" || e.status === "replaced" ? 0.55 : 1 }}>
-      <div className="grow">
-        <div className="xs dim" style={{ textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 750 }}>{SLOT_LABEL[e.slot]}{e.locked ? " · 🔒" : ""}</div>
-        <div className="t">{r.name}{e.servings !== 1 ? ` · ×${e.servings.toLocaleString("es-ES")}` : ""}</div>
-        <NutrientLine t={t} compact />
-        <span className="xs dim"> · {fmtNutrient("fatG", t.fatG)} g grasa</span>
-        <Portions recipeIngredients={r.ingredients} cat={cat} servings={e.servings} baseServings={r.servings} open={openPortions && e.status === "planned"} onIngredient={e.status === "planned" ? (index) => setIngredientsOpen(index) : undefined} />
-        {ingredientsOpen !== null && <IngredientSwap initialIndex={ingredientsOpen} entry={e} cat={cat} onClose={() => setIngredientsOpen(null)} />}
-        {e.status === "replaced" && <div className="xs" style={{ color: "var(--info)" }}>Sustituida por lo que registraste en este hueco</div>}
-        {e.notes && <div className="xs muted">{e.notes}</div>}
-        {hint && <div className="xs" style={{ color: "var(--info)" }}>{hint}</div>}
-        {e.replacedFrom && <div className="xs dim">Sustituye a: {cat.recipe(e.replacedFrom)?.name}</div>}
-      </div>
-      <div className="acts">
-        {e.status === "eaten" ? <span className="badge ok">Hecha</span> : e.status === "replaced" ? (
-          <button className="btn sm ghost" onClick={() => void patch("meal_entries", e.id, { status: "planned" })}>Recuperar</button>
-        ) : (
-          <>
-            <ActionButton className="btn sm primary" icon="check" onRun={() => markEaten(e)} success="Comida registrada">Hecha</ActionButton>
-            {e.replacedFrom && <ActionButton className="btn sm ghost" onRun={() => restoreMeal(e.id)} success="Receta anterior restaurada">Deshacer variante</ActionButton>}
-            <button className="btn sm" onClick={() => setIngredientsOpen(0)}>Variar ingredientes</button>
-            <button className="btn sm" onClick={onSwap}><Icon name="swap" />Cambiar</button>
-            <button className="btn sm ghost" onClick={() => void patch("meal_entries", e.id, { status: e.status === "skipped" ? "planned" : "skipped" })}>{e.status === "skipped" ? "Recuperar" : "Saltar"}</button>
-          </>
-        )}
-        <button className="icon-btn" aria-label={e.locked ? "Desbloquear comida" : "Bloquear comida"} onClick={() => void patch("meal_entries", e.id, { locked: !e.locked })}><Icon name={e.locked ? "lock" : "unlock"} /></button>
-      </div>
-    </div>
-  );
-}
-
-function SwapModal({ entry, cat, onClose }: { entry: MealEntry | null; cat: Catalog; onClose: () => void }) {
-  const prefs = usePreferences();
-  const toast = useToast();
-  const recipePrefs = useTable("recipe_prefs") ?? [];
-  const cur = entry ? cat.recipe(entry.recipeId) : undefined;
-  const pool = eligibleRecipes(cat.recipes, cat.food, { excludedAllergens: [...prefs.allergies, ...prefs.intolerances], excludedFoods: prefs.excludedFoods, blacklist: recipePrefs.filter(p => p.blacklisted || p.frequency === "never").map(p => p.recipeId) });
-  const opts = entry && cur ? swapOptions(cur, entry.slot, pool, cat.food, 6, entry.servings) : [];
-  return (
-    <Modal open={!!entry} onClose={onClose} title={`Cambiar ${cur?.name ?? "comida"}`}>
-      <p className="small muted">Ordenadas por energía e hidratos parecidos. La lista de la compra se recalcula sola.</p>
-      <div className="list">
-        {opts.map((o) => (
-          <div className="li" key={o.recipe.id}>
-            <div className="grow">
-              <div className="t">{o.recipe.name}</div>
-              <NutrientLine t={o.totals} compact />
-              <div className="xs dim">{o.dKcal >= 0 ? "+" : ""}{Math.round(o.dKcal)} kcal · {o.dCarbs >= 0 ? "+" : ""}{Math.round(o.dCarbs)} g hidratos respecto a la actual</div>
-            </div>
-            <ActionButton className="btn sm primary" onRun={async () => { await swapMeal(entry!.id, o.recipe.id); onClose(); }} success="Comida cambiada">Elegir</ActionButton>
-          </div>
-        ))}
-      </div>
-    </Modal>
   );
 }
 
@@ -167,7 +81,6 @@ function TodayTab({ cat }: { cat: Catalog }) {
   const meals = useLive(async () => (await weekMeals(ws)).filter((m) => m.date === today), [ws, today]);
   const logs = useLive(async () => (await tbl("food_logs").where("date").equals(today).toArray()).filter(active).sort((a, b) => a.eatenAt.localeCompare(b.eatenAt)), [today]) ?? [];
   const targets = useLive(() => currentTargets(), []);
-  const [swap, setSwap] = useState<MealEntry | null>(null);
   const sorted = (meals ?? []).sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
   return (
     <div className="stack">
@@ -175,7 +88,7 @@ function TodayTab({ cat }: { cat: Catalog }) {
       <DayTotals logs={logs.map((l) => l.totals)} targets={targets} />
       <Card title="Comidas previstas hoy">
         {meals && !meals.length ? <Empty title="Sin menú esta semana" action={<button className="btn primary" onClick={() => void generateWeekMenu(ws, { kcalTarget: targets?.kcal ?? null, keepLocked: true })}>Generar menú</button>} /> :
-          <div className="list">{sorted.map((e) => <MealRow key={e.id} e={e} cat={cat} onSwap={() => setSwap(e)} openPortions />)}</div>}
+          <div className="list">{sorted.map((e) => <MealRow key={e.id} e={e} cat={cat} openPortions />)}</div>}
       </Card>
       <BalanceCard cat={cat} />
       <Card title="Registrado hoy">
@@ -195,7 +108,6 @@ function TodayTab({ cat }: { cat: Catalog }) {
           </div>
         ) : <Empty title="Nada registrado todavía">Marca una comida prevista como hecha o usa «Registrar comida».</Empty>}
       </Card>
-      <SwapModal entry={swap} cat={cat} onClose={() => setSwap(null)} />
     </div>
   );
 }
@@ -207,21 +119,16 @@ const ADJUST_EXAMPLES = [
 ];
 
 /** Lenguaje natural → asistente: registrar lo comido y reajustar lo que queda (siempre como propuestas). */
-export function AdjustDayCard() {
-  const [text, setText] = useState("");
-  const go = (q: string) => { location.assign(`/asistente?send=1&q=${encodeURIComponent(q)}`); };
-  return (
-    <Card title="Ajusta mi día" sub="Cuéntale al asistente qué has comido o qué tienes en casa. Registra lo comido y te propone cómo encajar el resto del día; tú apruebas cada cambio.">
-      <textarea className="input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Ej.: He desayunado tortilla francesa y dos tostadas con café con leche; para comer tengo arroz…" aria-label="Qué has comido o qué tienes" />
-      <div className="row" style={{ marginTop: 8 }}>
-        <button className="btn primary" disabled={!text.trim()} onClick={() => go(text.trim())}><Icon name="chat" />Ajustar con el asistente</button>
-      </div>
-      <div className="pill-row" style={{ marginTop: 8 }}>
-        {ADJUST_EXAMPLES.map((e) => <button key={e} className="chip" onClick={() => setText(e)}>{e.length > 48 ? `${e.slice(0, 46)}…` : e}</button>)}
-      </div>
-      <p className="xs dim" style={{ marginBottom: 0 }}>Sin compensar con ejercicio ni saltarse comidas. Nunca da indicaciones de insulina.</p>
-    </Card>
-  );
+export function AdjustDayCard({embedded=false}: {embedded?:boolean} = {}) {
+  const [text,setText]=useState("");
+  const go=(q:string)=>location.assign(`/asistente?send=1&q=${encodeURIComponent(q)}`);
+  const form=<div className="stack">
+    <p className="small muted">Cuenta qué ha cambiado o qué tienes en casa. El asistente propondrá un ajuste que podrás revisar antes de aceptar.</p>
+    <textarea className="input" rows={3} value={text} onChange={e=>setText(e.target.value)} placeholder="Ej.: Hoy tengo menos tiempo o me faltan ingredientes para la cena…" aria-label="Qué has comido o qué tienes" />
+    <button className="btn primary" disabled={!text.trim()} onClick={()=>go(text.trim())}>Ajustar con el asistente</button>
+    <details className="quiet-disclosure"><summary>Ver ejemplos</summary><div className="stack">{ADJUST_EXAMPLES.map(example=><button className="text-action" key={example} onClick={()=>setText(example)}>{example}</button>)}</div></details>
+  </div>;
+  return embedded ? form : <Card title="Ajusta mi día">{form}</Card>;
 }
 
 const VERDICT = { on_track: "Día en objetivo", over: "Por encima", under: "Te quedas corto", in_progress: "En curso", unknown: "" } as const;
@@ -315,56 +222,38 @@ export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean 
 }
 
 function MenuTab({ cat }: { cat: Catalog }) {
-  const [ws, setWs] = useState(weekStartOf(localDate()));
-  const meals = useLive(() => weekMeals(ws), [ws]) ?? [];
-  const targets = useLive(() => currentTargets(), []);
-  const [useTarget, setUseTarget] = useState(true);
-  const [swap, setSwap] = useState<MealEntry | null>(null);
-  const toast = useToast();
-  const days = Array.from({ length: 7 }, (_, i) => addDays(ws, i));
-  const batch = useMemo(() => {
-    const count = new Map<string, number>();
-    meals.forEach((m) => { if (cat.recipe(m.recipeId)?.batchFriendly && (m.slot === "lunch" || m.slot === "dinner")) count.set(m.recipeId, (count.get(m.recipeId) ?? 0) + 1); });
-    return [...count.entries()].filter(([, n]) => n >= 2);
-  }, [meals, cat]);
-  return (
-    <div className="stack">
-      <div className="row between">
-        <div className="row">
-          <button className="icon-btn" aria-label="Semana anterior" onClick={() => setWs(addDays(ws, -7))}><Icon name="left" /></button>
-          <b>Semana del {formatDateEs(ws, { day: "numeric", month: "long" })}</b>
-          <button className="icon-btn" aria-label="Semana siguiente" onClick={() => setWs(addDays(ws, 7))}><Icon name="right" /></button>
-        </div>
-        <div className="row no-print">
-          <label className="small row" style={{ gap: 6 }}><input type="checkbox" checked={useTarget} onChange={(e) => setUseTarget(e.target.checked)} />Ajustar raciones a mi objetivo {targets?.kcal ? `(${targets.kcal[0]}–${targets.kcal[1]} kcal)` : "(sin objetivo calculable)"}</label>
-          <ActionButton className="btn primary" icon="sync" busyLabel="Generando…" onRun={() => generateWeekMenu(ws, { kcalTarget: useTarget ? targets?.kcal ?? null : null, keepLocked: true })} success="Menú generado (se conservan las comidas bloqueadas y hechas)">{meals.length ? "Regenerar" : "Generar menú"}</ActionButton>
-          <button className="btn ghost" onClick={() => window.print()}><Icon name="printer" />Imprimir</button>
-        </div>
-      </div>
-      {!meals.length ? <Empty title="Sin menú para esta semana">Genera uno: respeta alergias, exclusiones, tiempo de cocina y tus días de entrenamiento.</Empty> : days.map((d) => {
-        const dm = meals.filter((m) => m.date === d).sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
-        const tot = dm.filter((m) => m.status !== "skipped").reduce((acc, m) => {
-          const r = cat.recipe(m.recipeId);
-          if (!r) return acc;
-          const t = recipeNutrition(r.ingredients, cat.food, m.servings, r.servings).totals;
-          return { kcal: acc.kcal + t.kcal, c: acc.c + t.carbsAvailableG, p: acc.p + t.proteinG, f: acc.f + t.fiberG };
-        }, { kcal: 0, c: 0, p: 0, f: 0 });
-        return (
-          <Card key={d} title={formatDateEs(d, { weekday: "long", day: "numeric", month: "short" })} sub={`${Math.round(tot.kcal)} kcal · ${Math.round(tot.p)} g proteína · ${Math.round(tot.c)} g hidratos disp. · ${Math.round(tot.f)} g fibra`}>
-            <div className="list">{dm.map((e) => <MealRow key={e.id} e={e} cat={cat} onSwap={() => setSwap(e)} />)}</div>
-          </Card>
-        );
-      })}
-      {batch.length > 0 && (
-        <Card title="Preparación por lotes">
-          <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
-            {batch.map(([id, n]) => <li key={id}>Cocina <b>{cat.recipe(id)?.name}</b> para {n} comidas de una vez (guárdalo en la nevera hasta 3 días o congela).</li>)}
-          </ul>
-        </Card>
-      )}
-      <SwapModal entry={swap} cat={cat} onClose={() => setSwap(null)} />
-    </div>
-  );
+  const [ws,setWs] = useState(weekStartOf(localDate()));
+  const [day,setDay] = useState(weekdayOf(localDate()));
+  const [printAll,setPrintAll] = useState(false);
+  const [useTarget,setUseTarget] = useState(true);
+  const meals = useLive(()=>weekMeals(ws),[ws]) ?? [];
+  const targets = useLive(()=>currentTargets(),[]);
+  const days = Array.from({length:7},(_,i)=>addDays(ws,i));
+  useEffect(()=>{
+    if (!printAll) return;
+    const finish=()=>setPrintAll(false);
+    window.addEventListener("afterprint",finish,{once:true});
+    window.print();
+    return ()=>window.removeEventListener("afterprint",finish);
+  },[printAll]);
+  const renderDay=(date:string)=>{
+    const entries=meals.filter(m=>m.date===date).sort((a,b)=>SLOT_ORDER.indexOf(a.slot)-SLOT_ORDER.indexOf(b.slot));
+    return <section className="menu-day" key={date} role={printAll ? undefined : "tabpanel"} id={printAll ? undefined : "selected-menu-day"} aria-label={formatDateEs(date,{weekday:"long",day:"numeric",month:"long"})}>
+      <div className="today-section-head"><h2>{formatDateEs(date,{weekday:"long",day:"numeric",month:"short"})}</h2><span className="small muted">{entries.length} comidas</span></div>
+      <div className="menu-meals">{entries.map(e=><MealRow key={e.id} e={e} cat={cat} />)}</div>
+    </section>;
+  };
+  return <div className="stack menu-workspace">
+    <div className="menu-week-nav no-print"><button className="icon-btn" aria-label="Semana anterior" onClick={()=>setWs(addDays(ws,-7))}><Icon name="left" /></button><span>Semana del {formatDateEs(ws,{day:"numeric",month:"long"})}</span><button className="icon-btn" aria-label="Semana siguiente" onClick={()=>setWs(addDays(ws,7))}><Icon name="right" /></button></div>
+    <div className="day-picker no-print" role="tablist" aria-label="Días del menú">{days.map((date,i)=><button key={date} role="tab" aria-selected={day===i} aria-controls="selected-menu-day" tabIndex={day===i?0:-1} aria-label={`${formatDateEs(date,{weekday:"long",day:"numeric",month:"short"})}${date===localDate() ? ", hoy" : ""}`} onClick={()=>setDay(i)} onKeyDown={e=>{let next=i;if(e.key==="ArrowRight")next=(i+1)%7;else if(e.key==="ArrowLeft")next=(i+6)%7;else if(e.key==="Home")next=0;else if(e.key==="End")next=6;else return;e.preventDefault();setDay(next);e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();}}><span>{formatDateEs(date,{weekday:"short"}).replace(".","")}</span><b>{Number(date.slice(8))}</b>{date===localDate() && <i aria-hidden />}</button>)}</div>
+    {!meals.length ? <Empty title="Prepara tu menú semanal" action={<ActionButton className="btn primary" busyLabel="Preparando…" onRun={()=>generateWeekMenu(ws,{kcalTarget:useTarget?targets?.kcal??null:null,keepLocked:true})} success="Menú generado">Generar menú</ActionButton>}>Se tendrán en cuenta tus preferencias y las existencias de tu cocina.</Empty> : printAll ? days.map(renderDay) : renderDay(days[day])}
+    {meals.length>0 && <details className="quiet-disclosure menu-week-summary no-print"><summary>Vista de la semana</summary><ul>{days.map((date,i)=><li key={date}><button onClick={e=>{setDay(i);e.currentTarget.closest("details")?.removeAttribute("open");document.querySelector(".menu-week-nav")?.scrollIntoView({behavior:"smooth",block:"start"});}}><b>{formatDateEs(date,{weekday:"long",day:"numeric"})}</b><span>{meals.filter(m=>m.date===date).sort((a,b)=>SLOT_ORDER.indexOf(a.slot)-SLOT_ORDER.indexOf(b.slot)).map(m=>`${SLOT_LABEL[m.slot]}: ${cat.recipe(m.recipeId)?.name ?? "receta no disponible"}`).join(" · ")}</span></button></li>)}</ul></details>}
+    <details className="quiet-disclosure no-print"><summary>Opciones del menú</summary><div className="stack">
+      <label className="small row"><input type="checkbox" checked={useTarget} onChange={e=>setUseTarget(e.target.checked)} />Ajustar raciones al objetivo {targets?.kcal ? `(${targets.kcal[0]}–${targets.kcal[1]} kcal)` : "cuando esté disponible"}</label>
+      {meals.length>0 && <div className="row"><ActionButton className="btn" busyLabel="Preparando…" onRun={()=>generateWeekMenu(ws,{kcalTarget:useTarget?targets?.kcal??null:null,keepLocked:true})} success="Menú generado (se conservan las comidas bloqueadas y hechas)">Regenerar semana</ActionButton><button className="btn ghost" onClick={()=>setPrintAll(true)}>Imprimir semana</button></div>}
+      <p className="xs dim">Las comidas registradas y las que hayas conservado se mantienen al regenerar. Las cantidades y nutrientes se calculan con datos de referencia.</p>
+    </div></details>
+  </div>;
 }
 
 function ShoppingTab({ cat }: { cat: Catalog }) {
