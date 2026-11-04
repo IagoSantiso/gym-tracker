@@ -1,6 +1,6 @@
 /** Balance del día (lo comido + lo que queda del menú) y opciones para reajustar el resto. */
 import { tbl } from "@/lib/db/db";
-import { active } from "@/lib/db/repo";
+import { active, all } from "@/lib/db/repo";
 import { dayBalance, rebalanceOptions, type DayBalance, type DayTargets, type RebalanceOption, type RemainingMeal } from "@/lib/domain/nutrition/balance";
 import { eligibleRecipes } from "@/lib/domain/nutrition/menu";
 import { localDate } from "@/lib/domain/time";
@@ -40,10 +40,11 @@ export async function loadDayBalance(date = localDate(), cat?: Catalog): Promise
   const totals = logs.map((l) => l.totals);
   const hasEstimates = logs.some((l) => l.source === "estimated" || l.source === "ai_draft");
   const b = dayBalance(totals, remaining, c.food, targets, { hasEstimates });
+  const rp = await all("recipe_prefs");
   const pool = eligibleRecipes(c.recipes, c.food, {
     excludedAllergens: [...(prefs?.allergies ?? []), ...(prefs?.intolerances ?? [])],
-    excludedFoods: prefs?.excludedFoods ?? [],
-    blacklist: [],
+    excludedFoods: [...(prefs?.excludedFoods ?? []), ...(prefs?.foodContext?.avoid ?? [])],
+    blacklist: rp.filter(p => p.blacklisted || p.frequency === "never").map(p => p.recipeId),
   });
   const options = logs.length ? rebalanceOptions(totals, remaining, pool, c.food, targets) : [];
 

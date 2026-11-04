@@ -50,7 +50,7 @@ export const TABLES: TableDef[] = [
   {
     name: "preferences", sync: true, comment: "Preferencias (singleton)",
     columns: {
-      theme: "text!", mealsPerDay: "int!", allergies: "jsonb!", intolerances: "jsonb!", excludedFoods: "jsonb!",
+      foodContext: "jsonb", theme: "text!", mealsPerDay: "int!", allergies: "jsonb!", intolerances: "jsonb!", excludedFoods: "jsonb!",
       cookingTimeMin: "int!", budget: "text!", autoApplyProgression: "bool!", adaptationMode: "bool!",
       deloadEveryWeeks: "int", deloadActiveWeek: "date", activeBreakReminderMin: "int",
       strengthDaysPerWeek: "int!", activeTemplateId: "text", compensationMaxPct: "int",
@@ -206,7 +206,7 @@ export const TABLES: TableDef[] = [
   },
   {
     name: "recipe_prefs", sync: true, comment: "Favoritas, lista negra, último uso", indexes: ["recipeId"],
-    columns: { recipeId: "text!", favorite: "bool!", blacklisted: "bool!", lastUsed: "date" },
+    columns: { frequency: "text", recipeId: "text!", favorite: "bool!", blacklisted: "bool!", lastUsed: "date" },
   },
   {
     name: "meal_plans", sync: true, comment: "Menús semanales", indexes: ["weekStart"],
@@ -222,7 +222,7 @@ export const TABLES: TableDef[] = [
   {
     name: "food_logs", sync: true, comment: "Comidas realizadas (con instantánea nutricional)", indexes: ["date"],
     columns: {
-      date: "date!", eatenAt: "timestamptz!", slot: "text!", mealEntryId: "text", recipeId: "text",
+      stockUsage: "jsonb", date: "date!", eatenAt: "timestamptz!", slot: "text!", mealEntryId: "text", recipeId: "text",
       servings: "numeric", items: "jsonb!", title: "text!", totals: "jsonb!", source: "text!", note: "text",
     },
   },
@@ -234,7 +234,7 @@ export const TABLES: TableDef[] = [
   },
   {
     name: "pantry_items", sync: true, comment: "Despensa", indexes: ["foodId"],
-    columns: { foodId: "text!", name: "text!", grams: "numeric!" },
+    columns: { foodId: "text!", name: "text!", grams: "numeric!", location: "text", quantityKnown: "bool", opened: "bool", useBy: "date", recipeId: "text", portions: "numeric" },
   },
   /* ── Diabetes ── */
   {

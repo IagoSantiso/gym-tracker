@@ -1,4 +1,7 @@
 "use client";
+import { KitchenTab } from "@/components/nutrition/KitchenTab";
+import { deleteFoodLog } from "@/lib/services/kitchen";
+import { IngredientSwap } from "@/components/nutrition/IngredientSwap";
 import { useMemo, useState } from "react";
 import { ActionButton, Card, Empty, Field, Icon, Kpi, Modal, Notice, NumInput, PageHead, SourceBadge, Tabs, confirmAction, useTabParam, useToast } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
@@ -14,12 +17,12 @@ import { portionLines } from "@/lib/domain/nutrition/portions";
 import { addCompensationToPlan, loadDayBalance } from "@/lib/services/balance";
 import { addDays, formatDateEs, localDate, weekStartOf } from "@/lib/domain/time";
 import type { Food, MealEntry, MealSlot, NutrientTotals, ShopSection } from "@/lib/db/types";
-import { generateWeekMenu, loadCatalog, markEaten, refreshShoppingList, saveRecipe, setRecipePref, swapMeal, weekMeals, lookupBarcode, type Catalog } from "@/lib/services/nutrition";
+import { generateWeekMenu, loadCatalog, markEaten, refreshShoppingList, saveRecipe, setRecipePref, swapMeal, restoreMeal, weekMeals, lookupBarcode, type Catalog } from "@/lib/services/nutrition";
 import { currentTargets } from "@/lib/services/targets";
 import { download } from "@/lib/services/data";
 import { createProposal } from "@/lib/services/plan";
 
-const TABS = ["hoy", "menu", "compra", "recetas", "alimentos", "objetivos"] as const;
+const TABS = ["hoy", "menu", "cocina", "compra", "recetas", "alimentos", "objetivos"] as const;
 type Tab = (typeof TABS)[number];
 
 export function NutritionPage() {
@@ -32,13 +35,14 @@ export function NutritionPage() {
         Menús con cantidades en gramos, hidratos por comida y lista de la compra. Los valores son cálculos sobre datos de referencia: orientativos, no indicaciones de dosis.
       </PageHead>
       <Tabs label="Nutrición" value={tab} onChange={setTab} tabs={[
-        { id: "hoy", label: "Hoy" }, { id: "menu", label: "Menú semanal" }, { id: "compra", label: "Lista de la compra" },
+        { id: "hoy", label: "Hoy" }, { id: "cocina", label: "Mi cocina" }, { id: "menu", label: "Menú semanal" }, { id: "compra", label: "Lista de la compra" },
         { id: "recetas", label: "Recetas" }, { id: "alimentos", label: "Alimentos" }, { id: "objetivos", label: "Objetivos" },
       ]} />
       {!cat ? <div className="empty-state">Cargando…</div> : (
         <>
           {tab === "hoy" && <TodayTab cat={cat} />}
           {tab === "menu" && <MenuTab cat={cat} />}
+          {tab === "cocina" && <KitchenTab cat={cat} />}
           {tab === "compra" && <ShoppingTab cat={cat} />}
           {tab === "recetas" && <RecipesTab cat={cat} />}
           {tab === "alimentos" && <FoodsTab cat={cat} />}
@@ -60,7 +64,7 @@ export function NutrientLine({ t, compact }: { t: NutrientTotals; compact?: bool
   );
 }
 
-export function Portions({ recipeIngredients, cat, servings, baseServings, open }: { recipeIngredients: { foodId: string; grams: number; note?: string | null }[]; cat: Catalog; servings: number; baseServings: number; open?: boolean }) {
+export function Portions({ recipeIngredients, cat, servings, baseServings, open, onIngredient }: { onIngredient?: (index: number) => void; recipeIngredients: { foodId: string; grams: number; note?: string | null }[]; cat: Catalog; servings: number; baseServings: number; open?: boolean }) {
   const lines = portionLines(recipeIngredients, cat.food, servings, baseServings);
   if (!lines.length) return null;
   return (
@@ -69,7 +73,7 @@ export function Portions({ recipeIngredients, cat, servings, baseServings, open 
       <ul className="small" style={{ margin: "4px 0 0", paddingLeft: 18 }}>
         {lines.map((l, i) => (
           <li key={`${l.foodId}-${i}`}>
-            <b>{l.label}</b> {l.name.toLowerCase()}
+            <b>{l.label}</b> {onIngredient ? <button className="ingredient-link" onClick={() => onIngredient(i)}>{l.name.toLowerCase()}</button> : l.name.toLowerCase()}
             {l.stateNote && <span className="xs dim"> · {l.stateNote}{l.cookedG ? ` (≈ ${l.cookedG} g cocinado)` : ""}</span>}
             {l.note && <span className="xs dim"> · {l.note}</span>}
           </li>
@@ -81,6 +85,7 @@ export function Portions({ recipeIngredients, cat, servings, baseServings, open 
 
 function MealRow({ e, cat, onSwap, openPortions }: { e: MealEntry; cat: Catalog; onSwap: () => void; openPortions?: boolean }) {
   const toast = useToast();
+  const [ingredientsOpen, setIngredientsOpen] = useState<number | null>(null);
   const r = cat.recipe(e.recipeId);
   if (!r) return null;
   const t = recipeNutrition(r.ingredients, cat.food, e.servings, r.servings).totals;
@@ -92,7 +97,8 @@ function MealRow({ e, cat, onSwap, openPortions }: { e: MealEntry; cat: Catalog;
         <div className="t">{r.name}{e.servings !== 1 ? ` · ×${e.servings.toLocaleString("es-ES")}` : ""}</div>
         <NutrientLine t={t} compact />
         <span className="xs dim"> · {fmtNutrient("fatG", t.fatG)} g grasa</span>
-        <Portions recipeIngredients={r.ingredients} cat={cat} servings={e.servings} baseServings={r.servings} open={openPortions && e.status === "planned"} />
+        <Portions recipeIngredients={r.ingredients} cat={cat} servings={e.servings} baseServings={r.servings} open={openPortions && e.status === "planned"} onIngredient={e.status === "planned" ? (index) => setIngredientsOpen(index) : undefined} />
+        {ingredientsOpen !== null && <IngredientSwap initialIndex={ingredientsOpen} entry={e} cat={cat} onClose={() => setIngredientsOpen(null)} />}
         {e.status === "replaced" && <div className="xs" style={{ color: "var(--info)" }}>Sustituida por lo que registraste en este hueco</div>}
         {e.notes && <div className="xs muted">{e.notes}</div>}
         {hint && <div className="xs" style={{ color: "var(--info)" }}>{hint}</div>}
@@ -104,6 +110,8 @@ function MealRow({ e, cat, onSwap, openPortions }: { e: MealEntry; cat: Catalog;
         ) : (
           <>
             <ActionButton className="btn sm primary" icon="check" onRun={() => markEaten(e)} success="Comida registrada">Hecha</ActionButton>
+            {e.replacedFrom && <ActionButton className="btn sm ghost" onRun={() => restoreMeal(e.id)} success="Receta anterior restaurada">Deshacer variante</ActionButton>}
+            <button className="btn sm" onClick={() => setIngredientsOpen(0)}>Variar ingredientes</button>
             <button className="btn sm" onClick={onSwap}><Icon name="swap" />Cambiar</button>
             <button className="btn sm ghost" onClick={() => void patch("meal_entries", e.id, { status: e.status === "skipped" ? "planned" : "skipped" })}>{e.status === "skipped" ? "Recuperar" : "Saltar"}</button>
           </>
@@ -117,9 +125,10 @@ function MealRow({ e, cat, onSwap, openPortions }: { e: MealEntry; cat: Catalog;
 function SwapModal({ entry, cat, onClose }: { entry: MealEntry | null; cat: Catalog; onClose: () => void }) {
   const prefs = usePreferences();
   const toast = useToast();
+  const recipePrefs = useTable("recipe_prefs") ?? [];
   const cur = entry ? cat.recipe(entry.recipeId) : undefined;
-  const pool = eligibleRecipes(cat.recipes, cat.food, { excludedAllergens: [...prefs.allergies, ...prefs.intolerances], excludedFoods: prefs.excludedFoods, blacklist: [] });
-  const opts = entry && cur ? swapOptions(cur, entry.slot, pool, cat.food, 6) : [];
+  const pool = eligibleRecipes(cat.recipes, cat.food, { excludedAllergens: [...prefs.allergies, ...prefs.intolerances], excludedFoods: prefs.excludedFoods, blacklist: recipePrefs.filter(p => p.blacklisted || p.frequency === "never").map(p => p.recipeId) });
+  const opts = entry && cur ? swapOptions(cur, entry.slot, pool, cat.food, 6, entry.servings) : [];
   return (
     <Modal open={!!entry} onClose={onClose} title={`Cambiar ${cur?.name ?? "comida"}`}>
       <p className="small muted">Ordenadas por energía e hidratos parecidos. La lista de la compra se recalcula sola.</p>
@@ -180,7 +189,7 @@ function TodayTab({ cat }: { cat: Catalog }) {
                   <NutrientLine t={l.totals} />
                 </div>
                 <SourceBadge source={l.source} />
-                <button className="icon-btn" aria-label="Borrar registro" onClick={() => confirmAction("¿Borrar este registro?") && void remove("food_logs", l.id)}><Icon name="trash" /></button>
+                <button className="icon-btn" aria-label="Borrar registro" onClick={() => confirmAction("¿Borrar este registro?") && void deleteFoodLog(l.id)}><Icon name="trash" /></button>
               </div>
             ))}
           </div>
@@ -368,9 +377,9 @@ function ShoppingTab({ cat }: { cat: Catalog }) {
   const sections = [...new Set(list.items.map((i) => i.section))] as ShopSection[];
   const toggle = (key: string) => void patch("shopping_lists", list.id, { items: list.items.map((i) => (i.key === key ? { ...i, checked: !i.checked } : i)) });
   const toPantry = async (foodId: string, name: string, grams: number) => {
-    const ex = pantry.find((p) => p.foodId === foodId);
+    const ex = pantry.find((p) => p.foodId === foodId && !p.recipeId && p.quantityKnown !== false && (!p.useBy || p.useBy >= localDate()));
     if (ex) await patch("pantry_items", ex.id, { grams: ex.grams + grams });
-    else await put("pantry_items", { foodId, name, grams });
+    else await put("pantry_items", { foodId, name, grams, quantityKnown: true, location: cat.food(foodId)?.section === "carne_pescado" || cat.food(foodId)?.section === "lacteos_huevos" ? "fridge" : "pantry" });
     await refreshShoppingList(ws);
     toast(`${name} en despensa`);
   };
@@ -444,6 +453,7 @@ function RecipesTab({ cat }: { cat: Catalog }) {
                 <div className="t">{x.name} {p?.favorite && "★"}{p?.blacklisted && " ⊘"}</div>
                 <div className="s">{x.slots.map((s) => SLOT_LABEL[s]).join(", ")} · {x.prepMin + x.cookMin} min · {Math.round(t.kcal)} kcal · {Math.round(t.carbsAvailableG)} g hidratos</div>
               </button>
+              <select aria-label={`Frecuencia de ${x.name}`} value={p?.frequency ?? (x.id === "bacalao-garbanzos-espinacas" ? "occasional" : "regular")} onChange={e => void setRecipePref(x.id, { frequency: e.target.value as "regular" | "occasional" | "stock_only" | "never" })}><option value="regular">Habitual</option><option value="occasional">Ocasional</option><option value="stock_only">Solo si lo tengo</option><option value="never">Nunca</option></select>
               <button className="icon-btn" aria-label="Favorita" aria-pressed={!!p?.favorite} onClick={() => void setRecipePref(x.id, { favorite: !p?.favorite, blacklisted: false })}><Icon name="star" /></button>
               <button className="icon-btn" aria-label="No proponer" aria-pressed={!!p?.blacklisted} onClick={() => void setRecipePref(x.id, { blacklisted: !p?.blacklisted, favorite: false })}><Icon name="x" /></button>
             </div>

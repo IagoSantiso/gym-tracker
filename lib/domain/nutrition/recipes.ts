@@ -19,6 +19,10 @@ const r = (
 
 export const SEED_RECIPES: SeedRecipe[] = [
   // Desayunos
+  ...(["ham", "omelette"] as const).flatMap(kind => (["tomato", "lettuce"] as const).map(veg => r(
+    `mis-tostadas-${kind}-${veg}`, `Dos tostadas con ${kind === "ham" ? "jamón cocido" : "tortilla francesa"}, ${veg === "tomato" ? "tomate" : "lechuga"} y café con leche`, ["breakfast"], 5, kind === "ham" ? 2 : 6, 1,
+    [["bread_whole", 60, "2 tostadas; ajusta al peso de tu pan"], [kind === "ham" ? "ham_cooked" : "egg", kind === "ham" ? 60 : 100], [veg, veg === "tomato" ? 80 : 40], ["olive_oil", 5], ["milk_semi", 150, "leche del café; ajusta tipo y cantidad"], ["coffee_brewed", 60]],
+    ["Tuesta las dos rebanadas y lava la verdura.", kind === "ham" ? "Reparte el jamón cocido y la verdura sobre las tostadas; usa el aceite indicado." : "Bate los huevos, cuaja la tortilla francesa con el aceite y acompaña con las tostadas y la verdura.", "Prepara el café y añade la leche. Cantidades iniciales orientativas: personalízalas en Variar ingredientes."], { tags: ["desayuno-habitual"] }))),
   r("avena-yogur-frutos-rojos", "Avena con yogur griego y arándanos", ["breakfast"], 5, 0, 1,
     [["oats", 50], ["greek_yogurt_0", 150], ["blueberries", 80], ["walnuts", 10]],
     ["Mezcla la avena con el yogur (puede reposar la noche anterior).", "Añade los arándanos y las nueces troceadas."], { tags: ["sin cocción"] }),

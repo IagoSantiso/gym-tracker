@@ -23,7 +23,7 @@ export function buildShoppingList(
 ): ShoppingItem[] {
   const need = new Map<string, number>();
   for (const m of meals) {
-    if (m.status === "skipped" || m.status === "replaced" || m.leftoverOf) continue;
+    if (m.status === "eaten" || m.status === "skipped" || m.status === "replaced" || m.leftoverOf) continue;
     const r = recipes(m.recipeId);
     if (!r) continue;
     const k = m.servings / r.servings;
@@ -31,7 +31,7 @@ export function buildShoppingList(
   }
   // Las sobras sí requieren comprar sus raciones (se cocinan en el lote anterior)
   for (const m of meals) {
-    if (!m.leftoverOf || m.status === "skipped") continue;
+    if (!m.leftoverOf || ["skipped", "replaced", "eaten"].includes(m.status ?? "")) continue;
     const r = recipes(m.recipeId);
     if (!r) continue;
     for (const ing of r.ingredients) need.set(ing.foodId, (need.get(ing.foodId) ?? 0) + (ing.grams * m.servings) / r.servings);

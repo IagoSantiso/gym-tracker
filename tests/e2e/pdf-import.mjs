@@ -6,7 +6,7 @@ import { syntheticAgpPdf } from "../fixtures/make-agp-pdf.mjs";
 const { chromium } = createRequire(import.meta.url)("playwright");
 const port = Number(process.env.E2E_PDF_PORT ?? 3212);
 const base = `http://localhost:${port}`;
-const server = spawn("node_modules/.bin/next", ["start", "-p", String(port)], { stdio: ["ignore", "pipe", "pipe"], detached: true });
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], { stdio: ["ignore", "pipe", "pipe"], detached: true });
 let browser;
 try {
   await new Promise((resolve, reject) => {
@@ -53,5 +53,5 @@ try {
   console.log("PASS PDF LibreLink: página 12, previsualización, métricas publicadas, persistencia, original cifrado, duplicados, informe/Inicio y ninguna lectura inventada");
 } finally {
   await browser?.close();
-  try { process.kill(-server.pid, "SIGKILL"); } catch { /* terminado */ }
+  try { if (process.platform === "win32") server.kill(); else process.kill(-server.pid, "SIGKILL"); } catch { /* terminado */ }
 }

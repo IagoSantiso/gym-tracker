@@ -39,7 +39,7 @@ body{font:15px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans
   background:radial-gradient(900px 500px at 85% -10%,var(--glow) 0,transparent 60%),var(--bg);min-height:100vh}
 button,input{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none}
-.wrap{max-width:980px;margin:0 auto;padding:0 16px 160px}
+.app-wrap{max-width:980px;margin:0 auto;padding:0 16px 160px}
 
 /* ---------- Top bar ---------- */
 .topbar{position:sticky;top:0;z-index:20;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
@@ -181,7 +181,7 @@ button{cursor:pointer;border:0;background:none}
   .notes{grid-template-columns:1fr}
 }
 @media (max-width:560px){
-  .wrap{padding:0 12px 140px}
+  .app-wrap{padding:0 12px 140px}
   .days.n3,.days.n2{grid-template-columns:1fr}
   .day{padding:12px 14px}
   .mini{display:none}
@@ -373,7 +373,7 @@ table.data th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-sp
 @layer components {
 .li .acts{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
 @media (max-width:560px){
-  .li.wrap{flex-wrap:wrap}
+  .li.app-wrap{flex-wrap:wrap}
   .li.wrap>.grow{flex-basis:100%}
   .li.wrap>.acts{width:100%}
 }
@@ -461,3 +461,18 @@ ul.small li::marker,ul[style*="padding-left"] li::marker,.card ul:not([class]) l
 .ek-bar.in i{background:var(--lime)}.ek-bar.in i.plan{background:color-mix(in srgb,var(--lime) 35%,transparent)}
 .ek-bar.out i{background:var(--info)}
 .energy-kpi[data-v="in_progress"]{border-color:var(--line2)}
+
+/* Cocina e intercambios: readable on mobile and keyboard. */
+.kitchen-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:12px; }
+.kitchen-hero { border-left:4px solid var(--accent, #257b65); }
+.ingredient-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.ingredient-chips .chip { white-space:normal; text-align:left; min-height:44px; }
+.ingredient-chips .chip.active, .ingredient-option.selected { outline:2px solid var(--accent, #257b65); outline-offset:-2px; }
+.ingredient-option { width:100%; text-align:left; color:inherit; background:transparent; cursor:pointer; min-height:64px; }
+.ingredient-option .s { display:block; }
+.ingredient-link { color:inherit; background:none; border:0; border-bottom:1px dashed currentColor; padding:4px 0; text-align:left; cursor:pointer; font:inherit; }
+.swap-preview { background:var(--bg); padding:14px; border-radius:12px; }
+.swap-preview p { margin:8px 0; }
+.stock-expired { color:var(--danger, #b43c3c); }
+.kitchen-grid .btn, .ingredient-option { min-height:44px; }
+@media(max-width:600px) { .kitchen-grid .row, .kitchen-hero .row { align-items:stretch; } .kitchen-hero .btn { flex:1 1 100%; white-space:normal; } }

@@ -1,4 +1,5 @@
 "use client";
+import { PantryReview } from "@/components/nutrition/PantryReview";
 import { useState } from "react";
 import { ActionButton, Card, Icon, useToast } from "@/components/ui";
 import type { Proposal } from "@/lib/db/types";
@@ -8,6 +9,7 @@ const CONF = { low: "Confianza baja", medium: "Confianza media", high: "Confianz
 
 export function ProposalCard({ p }: { p: Proposal }) {
   const toast = useToast();
+  const [pantryDirty, setPantryDirty] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
   return (
@@ -24,10 +26,11 @@ export function ProposalCard({ p }: { p: Proposal }) {
           <div className="xs dim">{p.ops.length} cambio(s) · reversible</div>
         </div>
       </details>
+      {p.kind === "ai_pantry" && p.status === "pending" && <PantryReview key={p.updatedAt} proposal={p} onDirty={setPantryDirty} />}
       {p.decisionReason && <p className="xs muted">Motivo del rechazo: {p.decisionReason}</p>}
       {p.status === "pending" && !rejecting && (
         <div className="row" style={{ marginTop: 8 }}>
-          <ActionButton className="btn sm primary" icon="check" onRun={async () => { const r = await acceptProposal(p.id); if (!r.ok) throw new Error(r.error ?? "No se pudo aplicar"); }} success="Cambio aplicado">Aceptar</ActionButton>
+          <ActionButton className="btn sm primary" icon="check" disabled={pantryDirty} onRun={async () => { const r = await acceptProposal(p.id); if (!r.ok) throw new Error(r.error ?? "No se pudo aplicar"); }} success="Cambio aplicado">Aceptar</ActionButton>
           <button className="btn sm ghost" onClick={() => setRejecting(true)}>Rechazar</button>
         </div>
       )}

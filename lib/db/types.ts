@@ -73,6 +73,7 @@ export interface Goals extends BaseRecord {
 }
 
 export interface Preferences extends BaseRecord {
+  foodContext?: { locality: string; shops: string; staples: string[]; avoid: string[] } | null;
   theme: "system" | "light" | "dark";
   mealsPerDay: number;
   allergies: string[];
@@ -464,6 +465,7 @@ export interface RecipeIngredient extends BaseRecord, RecipeIngredientData {
 }
 
 export interface RecipePref extends BaseRecord {
+  frequency?: "regular" | "occasional" | "stock_only" | "never" | null;
   recipeId: string;
   favorite: boolean;
   blacklisted: boolean;
@@ -503,6 +505,7 @@ export interface NutrientTotals {
 }
 
 export interface FoodLog extends BaseRecord {
+  stockUsage?: { id: string; grams: number; portions?: number }[] | null;
   date: string;
   eatenAt: string;
   slot: MealSlot;
@@ -535,6 +538,12 @@ export interface ShoppingList extends BaseRecord {
 }
 
 export interface PantryItem extends BaseRecord {
+  location?: "fridge" | "freezer" | "pantry" | null;
+  quantityKnown?: boolean | null;
+  opened?: boolean | null;
+  useBy?: string | null;
+  recipeId?: string | null;
+  portions?: number | null;
   foodId: string;
   name: string;
   grams: number;

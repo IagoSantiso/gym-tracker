@@ -125,6 +125,15 @@ export const SEED_FOODS: Omit<Food, "createdAt" | "updatedAt">[] = R.map(
   }),
 );
 
+// Explicit generic estimates: replace with the user's product label when available.
+SEED_SOURCES.push({ id: "generic_estimate", name: "Referencia genérica estimada", license: "Estimación orientativa de la app; no etiqueta de fabricante", url: null, version: "2026-11", attribution: null });
+const estimatedFood = (id: string, name: string, state: Food["state"], kcal: number, proteinG: number, fatG: number, carbsAvailableG: number, allergens: string[], section: ShopSection): Omit<Food, "createdAt" | "updatedAt"> => ({ id, name, state, section, sourceId: "generic_estimate", source: "estimated", sourceRef: "Referencia aproximada, no medida ni etiqueta de producto", carbBasis: "available", per100: { kcal, proteinG, fatG, carbsAvailableG, carbsTotalG: null, fiberG: 0, satFatG: null, sugarsG: null, saltG: null }, allergens, tags: ["estimado"], notes: "Valores aproximados. Sustituye por la etiqueta de tu producto para mayor precisión.", unitWeights: null });
+SEED_FOODS.push(
+  { ...estimatedFood("ham_cooked", "Jamón cocido (referencia Campofrío Extra)", "as_sold", 130, 18, 6, 1, [], "carne_pescado"), source: "imported", sourceId: "label", sourceRef: "https://www.campofrio.es/p/jamon-cocido-extra", per100: { kcal: 130, proteinG: 18, fatG: 6, carbsAvailableG: 1, carbsTotalG: null, fiberG: null, satFatG: 2.4, sugarsG: 1, saltG: 1.9 }, notes: "Ficha del fabricante consultada 2026-11-04. Referencia para calcular: revisa la etiqueta de tu jamón, que puede ser otro producto." },
+  { ...estimatedFood("seabass_raw", "Lubina, carne cruda (referencia CoFID)", "raw", 168, 20, 9.8, 0, ["pescado"], "carne_pescado"), sourceId: "generic_estimate", sourceRef: "Seafish / CoFID 2021: https://www.gov.uk/government/uploads/system/uploads/attachment_data/file/167923/Nutrient_analysis_of_fish_and_fish_products_-_Analytical_Report.pdf", notes: "Referencia CoFID publicada por Seafish: 168 kcal, 20 g proteína y 9,8 g grasa por 100 g de carne cruda. Varía por origen; no es peso de pescado entero." },
+  { ...estimatedFood("seabream_raw", "Dorada, carne cruda (referencia IPMA)", "raw", 150.9, 17.8, 8.3, 0, ["pescado"], "carne_pescado"), sourceRef: "https://www.ipma.pt/resources.www/docs/publicacoes.site/pescado/site/dourada/dour_main.htm", notes: "IPMA: composición aproximada de la parte comestible cruda; no es peso de pescado entero. Varía por origen." },
+  estimatedFood("coffee_brewed", "Café preparado sin azúcar (referencia estimada)", "as_sold", 1, 0.1, 0, 0, [], "bebidas"),
+);
 export const SEED_FOOD_BY_ID: Record<string, (typeof SEED_FOODS)[number]> = Object.fromEntries(SEED_FOODS.map((f) => [f.id, f]));
 
 export const SECTION_LABEL: Record<ShopSection, string> = {

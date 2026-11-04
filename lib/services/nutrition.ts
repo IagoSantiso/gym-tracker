@@ -1,5 +1,5 @@
 /** Nutrición: catálogo (semilla + propio), menús, comidas registradas, lista de la compra. */
-import { tbl } from "@/lib/db/db";
+import { getDb, tbl } from "@/lib/db/db";
 import { active, all, bulkPut, nowIso, patch, put, remove } from "@/lib/db/repo";
 import type { Food, FoodLog, MealEntry, MealSlot, Recipe, RecipeIngredientData } from "@/lib/db/types";
 import { SEED_FOOD_BY_ID, SEED_FOODS } from "@/lib/domain/nutrition/foods";
@@ -7,7 +7,8 @@ import { SEED_RECIPES } from "@/lib/domain/nutrition/recipes";
 import { recipeNutrition, type FoodLike } from "@/lib/domain/nutrition/calc";
 import { MENU_VERSION, generateMenu, slotsFor, type RecipeLike } from "@/lib/domain/nutrition/menu";
 import { buildShoppingList } from "@/lib/domain/nutrition/shopping";
-import { addDays, localDate } from "@/lib/domain/time";
+import { addDays, localDate, weekStartOf } from "@/lib/domain/time";
+import { consumeFoodLog } from "./kitchen";
 import { serial } from "./lock";
 
 export interface Catalog {
@@ -41,22 +42,26 @@ async function generateWeekMenuInner(weekStart: string, opts: { kcalTarget: [num
   const rp = await all("recipe_prefs");
   const existingPlan = (await tbl("meal_plans").where("weekStart").equals(weekStart).toArray()).find(active);
   const existing = existingPlan ? (await tbl("meal_entries").where("mealPlanId").equals(existingPlan.id).toArray()).filter(active) : [];
-  const locked = opts.keepLocked ? existing.filter((e) => e.locked || e.status === "eaten") : [];
+  const locked = opts.keepLocked ? existing.filter((e) => e.locked || e.status === "eaten" || e.status === "replaced") : [];
   const planned = (await tbl("planned_items").where("weekStart").equals(weekStart).toArray()).filter((i) => active(i) && i.kind !== "rest" && i.kind !== "walk" && i.status !== "cancelled");
+  const pantry = await all("pantry_items");
   const menu = generateMenu(cat.recipes, cat.food, {
     weekStart,
+    stock: pantry,
+    frequencies: { "bacalao-garbanzos-espinacas": "occasional", ...Object.fromEntries(rp.map(r => [r.recipeId, r.frequency ?? "regular"])) },
+    revision: Number(existingPlan?.settings.revision ?? 0) + (existingPlan ? 1 : 0),
     slots: slotsFor(prefs?.mealsPerDay ?? 4),
     trainingDates: [...new Set(planned.map((p) => p.date))],
     excludedAllergens: [...(prefs?.allergies ?? []), ...(prefs?.intolerances ?? [])],
-    excludedFoods: prefs?.excludedFoods ?? [],
+    excludedFoods: [...(prefs?.excludedFoods ?? []), ...(prefs?.foodContext?.avoid ?? [])],
     blacklist: rp.filter((r) => r.blacklisted).map((r) => r.recipeId),
-    favorites: rp.filter((r) => r.favorite).map((r) => r.recipeId),
+    favorites: [...rp.filter((r) => r.favorite).map((r) => r.recipeId), ...cat.recipes.filter(r => r.tags.includes("desayuno-habitual")).map(r => r.id)],
     maxCookMin: prefs?.cookingTimeMin ?? 30,
     kcalTarget: opts.kcalTarget,
-    locked: locked.map((l) => ({ date: l.date, slot: l.slot, recipeId: l.recipeId, servings: l.servings })),
+    locked: locked.map((l) => ({ date: l.date, slot: l.slot, recipeId: l.recipeId, servings: l.servings, reserveStock: l.status === "planned" })),
   });
   const plan = existingPlan
-    ? await patch("meal_plans", existingPlan.id, { generatedAt: nowIso(), generatorVersion: MENU_VERSION, settings: { kcalTarget: opts.kcalTarget } })
+    ? await patch("meal_plans", existingPlan.id, { generatedAt: nowIso(), generatorVersion: MENU_VERSION, settings: { kcalTarget: opts.kcalTarget, revision: Number(existingPlan?.settings.revision ?? 0) + (existingPlan ? 1 : 0) } })
     : await put("meal_plans", { weekStart, generatedAt: nowIso(), generatorVersion: MENU_VERSION, settings: { kcalTarget: opts.kcalTarget } });
   const keepIds = new Set(locked.map((l) => l.id));
   await remove("meal_entries", existing.filter((e) => !keepIds.has(e.id)).map((e) => e.id));
@@ -80,10 +85,18 @@ export async function swapMeal(entryId: string, recipeId: string) {
   if (plan) await refreshShoppingList(plan.weekStart);
 }
 
+export async function restoreMeal(entryId: string) {
+  const e = await tbl("meal_entries").get(entryId);
+  if (!active(e) || !e.replacedFrom || e.status !== "planned") return;
+  await patch("meal_entries", e.id, { recipeId: e.replacedFrom, replacedFrom: null, notes: null });
+  await refreshShoppingList(weekStartOf(e.date));
+}
+
 export async function refreshShoppingList(weekStart: string) {
   const cat = await loadCatalog();
   const meals = await weekMeals(weekStart);
-  const pantry = await all("pantry_items");
+  const { stockGrams } = await import("@/lib/domain/nutrition/kitchen");
+  const pantry = [...stockGrams(await all("pantry_items"), localDate())].map(([foodId, grams]) => ({ foodId, grams }));
   const prev = (await tbl("shopping_lists").where("weekStart").equals(weekStart).toArray()).find(active);
   const items = buildShoppingList(
     meals.map((m) => ({ recipeId: m.recipeId, servings: m.servings, status: m.status, leftoverOf: m.notes?.startsWith("Sobras") ? "x" : null })),
@@ -95,16 +108,28 @@ export async function refreshShoppingList(weekStart: string) {
 
 /** Marca una comida prevista como realizada y crea el registro con instantánea nutricional. */
 export async function markEaten(entry: MealEntry, servings?: number): Promise<FoodLog | undefined> {
+  return serial("food-log", () => markEatenInner(entry, servings));
+}
+async function markEatenInner(entry: MealEntry, servings?: number): Promise<FoodLog | undefined> {
+  const previous = (await all("food_logs")).find(l => l.mealEntryId === entry.id);
+  if (previous) return previous;
   const cat = await loadCatalog();
   const r = cat.recipe(entry.recipeId);
   if (!r) return;
   const s = servings ?? entry.servings;
   const { lines, totals } = recipeNutrition(r.ingredients, cat.food, s, r.servings);
+  const db = getDb();
+  const log = await db.transaction("rw", [db.table("meal_entries"), db.table("food_logs"), db.table("pantry_items"), db.outbox], async () => {
   await patch("meal_entries", entry.id, { status: "eaten", servings: s });
-  return put("food_logs", {
+  const log = await put("food_logs", {
     date: entry.date, eatenAt: nowIso(), slot: entry.slot, mealEntryId: entry.id, recipeId: r.id, servings: s,
     items: lines.map((l) => ({ foodId: l.foodId, grams: Math.round(l.grams) })), title: r.name, totals, source: "calculated", note: null,
   });
+  await consumeFoodLog(log.id);
+  return log;
+  });
+  await refreshShoppingList(weekStartOf(entry.date));
+  return log;
 }
 
 /**
@@ -122,10 +147,14 @@ export async function logFreeMeal(opts: { slot: MealSlot; title: string; items: 
   const cat = await loadCatalog();
   const { totals } = recipeNutrition(opts.items.map((i) => ({ ...i, note: null })), cat.food, 1, 1);
   await replacePlannedSlot(opts.date ?? localDate(), opts.slot);
-  return put("food_logs", {
+  const log = await put("food_logs", {
     date: opts.date ?? localDate(), eatenAt: opts.eatenAt ?? nowIso(), slot: opts.slot, mealEntryId: null, recipeId: null, servings: null,
     items: opts.items, title: opts.title, totals, source: "calculated", note: null,
   });
+  const { consumeFoodLog } = await import("./kitchen");
+  await consumeFoodLog(log.id);
+  await refreshShoppingList(weekStartOf(log.date));
+  return log;
 }
 
 /** Registro rápido solo con hidratos/energía de una etiqueta (dato manual). */
@@ -139,10 +168,10 @@ export async function logManualMeal(opts: { slot: MealSlot; title: string; carbs
   });
 }
 
-export async function setRecipePref(recipeId: string, changes: { favorite?: boolean; blacklisted?: boolean }) {
+export async function setRecipePref(recipeId: string, changes: { favorite?: boolean; blacklisted?: boolean; frequency?: "regular" | "occasional" | "stock_only" | "never" }) {
   const ex = (await tbl("recipe_prefs").where("recipeId").equals(recipeId).toArray()).find(active);
   if (ex) await patch("recipe_prefs", ex.id, changes);
-  else await put("recipe_prefs", { recipeId, favorite: !!changes.favorite, blacklisted: !!changes.blacklisted, lastUsed: null });
+  else await put("recipe_prefs", { recipeId, favorite: !!changes.favorite, blacklisted: !!changes.blacklisted, frequency: changes.frequency ?? "regular", lastUsed: null });
 }
 
 export async function saveRecipe(r: Omit<Recipe, "createdAt" | "updatedAt" | "id"> & { id?: string }, ingredients: RecipeIngredientData[]) {

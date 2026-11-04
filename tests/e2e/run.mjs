@@ -23,7 +23,7 @@ const ok = (cond, msg) => {
   if (!cond) failures++;
 };
 
-const server = spawn(join(here, "..", "..", "node_modules", ".bin", "next"), ["start", "-p", String(PORT)], { cwd: join(here, "..", ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NODE_ENV: "production" } });
+const server = spawn(process.execPath, [join(here, "..", "..", "node_modules", "next", "dist", "bin", "next"), "start", "-p", String(PORT)], { cwd: join(here, "..", ".."), stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NODE_ENV: "production" } });
 /** Mata el servidor y sus descendientes (next start lanza un proceso next-server hijo). */
 const stopServer = () => {
   const kids = (pid) => {
@@ -50,7 +50,7 @@ const browser = await chromium.launch();
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, acceptDownloads: true });
 const page = await ctx.newPage();
 const errors = [];
-page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+page.on("pageerror", (e) => errors.push(`pageerror at ${page.url()}: ${e.stack}`));
 page.on("console", (m) => m.type() === "error" && !/Failed to load resource|net::ERR|favicon/.test(m.text()) && errors.push(`console: ${m.text()}`));
 page.on("dialog", (d) => d.accept());
 const shot = (name) => page.screenshot({ path: join(SHOTS, `${name}.png`), fullPage: false });
@@ -226,7 +226,7 @@ try {
   /* Capturas en modo oscuro (identidad original) */
   const dark = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: "dark" });
   const dp = await dark.newPage();
-  dp.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
+  dp.on("pageerror", (e) => errors.push(`pageerror at ${page.url()}: ${e.stack}`));
   await dp.goto(BASE + "/entrenamiento/sesion?t=ppl-3d&d=2", { waitUntil: "networkidle" });
   await dp.getByText("Prensa de piernas").first().waitFor();
   ok((await dp.evaluate(() => document.documentElement.dataset.theme)) === "dark", "tema oscuro según el sistema");

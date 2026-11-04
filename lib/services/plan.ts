@@ -137,6 +137,10 @@ export async function acceptProposal(id: string): Promise<{ ok: boolean; error?:
 
 /** Si la propuesta toca el menú, recalcula la lista de la compra de las semanas afectadas. */
 async function afterMealChanges(ops: ProposalOp[]) {
+  const { consumeFoodLog } = await import("./kitchen");
+  for (const op of ops) if (op.table === "food_logs" && op.op === "create" && op.record.id) await consumeFoodLog(String(op.record.id));
+  const { refreshShoppingList: refresh } = await import("./nutrition");
+  if (ops.some(o => o.table === "pantry_items")) await refresh(weekStartOf(new Date().toISOString().slice(0, 10)));
   const ids = ops.filter((o) => o.table === "meal_entries" && o.op !== "create").map((o) => (o as { id: string }).id);
   if (!ids.length) return;
   const { refreshShoppingList } = await import("./nutrition");
@@ -156,6 +160,8 @@ export async function rejectProposal(id: string, reason: string | null) {
 export async function revertProposal(id: string) {
   const p = await tbl("proposals").get(id);
   if (!p || p.status !== "accepted" || !p.inverse) return;
+  const { undoStockUsage } = await import("./kitchen");
+  for (const op of p.inverse) if (op.table === "food_logs" && op.op === "delete") await undoStockUsage(op.id);
   await applyOps(p.inverse);
   await patch("proposals", id, { status: "reverted", decidedAt: nowIso() });
   await afterMealChanges(p.inverse);
