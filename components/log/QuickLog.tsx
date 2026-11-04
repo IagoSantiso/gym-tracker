@@ -12,10 +12,11 @@ import type { EnduranceType, GlucoseEventKind, MealSlot, Sport, UserNote } from 
 import { SLOT_LABEL } from "@/lib/domain/nutrition/recipes";
 import { loadCatalog, logFreeMeal, logManualMeal } from "@/lib/services/nutrition";
 import { recipeNutrition } from "@/lib/domain/nutrition/calc";
+import { StrengthLogModal } from "@/components/training/StrengthLog";
 import { autoLinkPlanned } from "@/lib/services/training";
 import { all } from "@/lib/db/repo";
 
-export type QuickKind = "weight" | "meal" | "glucose" | "activity" | "note" | "checkin" | null;
+export type QuickKind = "weight" | "meal" | "glucose" | "activity" | "strength" | "note" | "checkin" | null;
 
 /** Fecha y hora local editables → ISO UTC. */
 function useWhen(tz: string) {
@@ -42,6 +43,7 @@ export function QuickLog({ kind, onClose }: { kind: QuickKind; onClose: () => vo
       {kind === "meal" && <MealModal onClose={onClose} />}
       {kind === "glucose" && <GlucoseModal onClose={onClose} />}
       {kind === "activity" && <ActivityModal onClose={onClose} />}
+      {kind === "strength" && <StrengthLogModal onClose={onClose} />}
       {kind === "note" && <NoteModal onClose={onClose} />}
       {kind === "checkin" && <CheckinModal onClose={onClose} />}
     </>
@@ -249,6 +251,7 @@ function ActivityModal({ onClose }: { onClose: () => void }) {
   const w = useWhen(p.timezone);
   const toast = useToast();
   const shoes = useLive(() => all("shoes"), []) ?? [];
+  const [strength,setStrength] = useState(false);
   const [sport, setSport] = useState<Sport>("run");
   const [type, setType] = useState<EnduranceType>("easy");
   const [min, setMin] = useState<number | null>(40);
@@ -283,10 +286,12 @@ function ActivityModal({ onClose }: { onClose: () => void }) {
     toast(kg ? `Actividad guardada · ~${Math.round(enduranceKcal(rec, kg) / 10) * 10} kcal estimadas (cuentan en el balance del día)` : "Actividad guardada (añade tu peso para estimar el gasto)");
     onClose();
   };
+  if (strength) return <StrengthLogModal onClose={onClose} />;
   return (
     <Modal open title="Registrar actividad" onClose={onClose} footer={<Footer onClose={onClose} onSave={save} disabled={!min} />}>
       <div className="stack">
         <div className="row">
+          <button className="chip" onClick={()=>setStrength(true)}>Fuerza / abdominales</button>
           {(["run", "bike", "walk", "treadmill", "mobility"] as Sport[]).map((s) => <button key={s} className="chip" aria-pressed={sport === s} onClick={() => setSport(s)}>{SPORT_LABEL[s]}</button>)}
         </div>
         {(sport === "run" || sport === "bike") && (

@@ -60,7 +60,7 @@ try {
   await page.goto(BASE + "/", { waitUntil: "networkidle" });
   await page.getByRole("heading", {name:"Hoy",exact:true}).waitFor();
   ok(true, "Hoy carga");
-  await page.getByRole("heading", {name:"Movimiento",exact:true}).waitFor();
+  await page.getByRole("heading", {name:"Ejercicios de hoy",exact:true}).waitFor();
   await page.getByText("Personalizar mi día", {exact:true}).click();
   ok(await page.getByText("Tu perfil está en borrador").isVisible(), "aviso de perfil en borrador");
   await page.getByText("Personalizar mi día", {exact:true}).click();

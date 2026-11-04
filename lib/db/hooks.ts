@@ -7,7 +7,9 @@ import type { DiabetesSettings, Goals, Preferences, Profile, Rec, TableName } fr
 
 /** Consulta reactiva; `undefined` mientras carga. */
 export function useLive<T>(fn: () => Promise<T> | T, deps: unknown[] = []): T | undefined {
-  return useLiveQuery(fn, deps);
+  // Dexie detects native async queriers to keep observation across await boundaries.
+  // A synchronous () => asyncService() loses reads after the service's first await.
+  return useLiveQuery(async () => await fn(), deps);
 }
 
 export function useTable<T extends TableName>(table: T, deps: unknown[] = []): Rec<T>[] | undefined {

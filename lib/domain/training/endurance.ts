@@ -31,7 +31,7 @@ export function dailyLoads(
     if ((rpe ?? 0) >= 7) d.hard = true;
   };
   endurance.forEach((e) => add(e.date, e.durationSec / 60, e.rpe));
-  strength.filter((s) => s.status === "completed").forEach((s) => add(s.date, s.durationMin ?? 60, s.rpe));
+  strength.filter((s) => s.status === "completed").forEach((s) => add(s.date, s.durationMin ?? 0, s.rpe));
   return out;
 }
 

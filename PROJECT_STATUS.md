@@ -1,5 +1,16 @@
 # Estado del proyecto — NEXO v1
 
+## Registro de fuerza y energía visible — 2026-11-04
+
+- Hoy: consumido frente a gasto estimado del día completo arriba, con actualización reactiva al guardar; comidas y ejercicios como filas desplegables.
+- Confirmar sesiones ya realizadas desde Hoy, rescatar sesiones abiertas y enlaces al plan; conserva cargas y series reales.
+- Fuerza/abdominales sin IA, por series × repeticiones, independientes o añadidos a una sesión. Guardado transaccional e idempotente.
+- 12 ejercicios de abdomen y 24 fotos públicas de free-exercise-db, incluidos en el modo offline.
+- Últimas cargas por serie al cargar el historial, sin sobrescribir ediciones manuales. Sin duración conocida no se suponen 60 minutos.
+- Validación: 170 pruebas unitarias, TypeScript, build, revisión de seguridad, recorridos E2E móviles y offline, y prueba de actualización del balance sin recargar.
+- Uso y límites: `docs/ACTIVITY_RECORDING.md`. Sin cambios de esquema.
+
+
 ## Hoy y simplificación — 2026-11-04
 
 - Inicio centrado en movimiento y comidas, un único registro y detalles bajo demanda.

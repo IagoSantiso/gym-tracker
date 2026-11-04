@@ -13,7 +13,8 @@ try {
   const page=await ctx.newPage();const errors=[];page.on("pageerror",e=>errors.push(e.stack));
   await page.goto(base,{waitUntil:"networkidle"});
   await page.getByRole("heading",{name:"Hoy",exact:true}).waitFor();
-  assert.equal(await page.locator(".stats").count(),0,"no KPI wall on Today");
+  await page.getByRole("heading",{name:"Tu energía de hoy",exact:true}).waitFor();
+  assert.ok(await page.getByText("Gasto estimado del día",{exact:true}).isVisible());
   assert.equal(await page.getByRole("heading",{name:"Balance del día"}).count(),0,"health details are loaded only when requested");
   assert.equal(await page.locator('nav[aria-label="Secciones principales"] a').count(),4,"four destinations plus More");
   await page.getByRole("button",{name:"Más",exact:true}).click();
@@ -48,10 +49,11 @@ try {
   await page.screenshot({animations:"disabled",path:"tests/e2e/screenshots/menu-day-mobile.png",fullPage:true});
   console.log("PASS menú: un día visible, resumen semanal y navegación con teclado");
   await page.goto(base,{waitUntil:"networkidle"});
-  await page.locator(".today-food .meal-card").first().waitFor();
-  assert.equal(await page.locator(".today-food > .meal-card").count(),1,"one meal is highlighted");
-  assert.equal(await page.locator(".today-other-meals").getAttribute("open"),null);
-  await page.locator(".today-food > .meal-card").getByRole("button",{name:"Cambiar",exact:true}).click();
+  await page.locator(".today-meal").first().waitFor();
+  assert.equal(await page.locator(".today-meal").count(),4,"all meals visible as collapsed summaries");
+  assert.equal(await page.locator(".today-meal[open]").count(),0);
+  await page.locator(".today-meal > summary").first().click();
+  await page.locator(".today-meal").first().getByRole("button",{name:"Cambiar",exact:true}).click();
   await page.getByRole("button",{name:/Un ingrediente/}).click();
   await page.getByRole("heading",{name:"Cambiar ingrediente",exact:true}).waitFor();
   await page.locator(".ingredient-option").first().click();
@@ -76,7 +78,7 @@ try {
   await page.getByLabel("Qué has comido o qué tienes").waitFor();
   assert.equal(await page.locator("dialog[open]").count(),1);
   await page.getByRole("button",{name:"Cerrar",exact:true}).click();
-  await page.locator(".today-disclosure > summary").filter({hasText:"Balance y salud"}).click();
+  await page.locator(".today-disclosure > summary").filter({hasText:"Nutrición y salud en detalle"}).click();
   await page.getByRole("heading",{name:"Balance del día",exact:true}).waitFor();
   assert.deepEqual(errors,[]);
   console.log("PASS cambio desde Hoy: vista previa, acción visible y detalles accesibles en móvil/escritorio");

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ExerciseCard, type SetDraft } from "@/components/training/ExerciseCard";
+import { StrengthLogModal } from "@/components/training/StrengthLog";
 import { RestDock } from "@/components/training/RestDock";
 import { Icon, Modal, Notice, useToast, Field, Toggle } from "@/components/ui";
 import { useLive, usePreferences } from "@/lib/db/hooks";
@@ -35,6 +36,7 @@ export function SessionPage() {
   const [session, setSession] = useState<WorkoutSession | null>(null);
   const [swaps, setSwaps] = useState<Record<number, string>>({});
   const [swapFor, setSwapFor] = useState<number | null>(null);
+  const [extraOpen,setExtraOpen] = useState(false);
   const [finishOpen, setFinishOpen] = useState(false);
   const [rpe, setRpe] = useState<number | null>(7);
   const [notes, setNotes] = useState("");
@@ -96,10 +98,11 @@ export function SessionPage() {
         unlockAudio();
         timer.start(item.restSec);
       }
-    })();
+    })().catch(()=>toast("No se pudo guardar la serie. Vuelve a marcarla."));
   };
 
-  const totalSets = items.reduce((a, it) => a + adjustPrescription(it.sets, it.rir, { deload, adaptation: prefs.adaptationMode }).sets, 0);
+  const extraSets = logged.filter(s=>!items.some((it,i)=>it.exerciseId===s.exerciseId && i===s.exerciseOrder));
+  const totalSets = items.reduce((a, it) => a + adjustPrescription(it.sets, it.rir, { deload, adaptation: prefs.adaptationMode }).sets, 0) + extraSets.length;
   const doneSets = logged.filter((s) => s.completed).length;
 
   if (!q || template === undefined) return <div className="empty-state">Cargando sesión…</div>;
@@ -148,6 +151,9 @@ export function SessionPage() {
           />
         );
       })}
+      {logged.filter(s=>!items.some((it,i)=>it.exerciseId===s.exerciseId && i===s.exerciseOrder)).length>0 && <div className="card"><h3>Ejercicios añadidos</h3><ul className="small">{[...new Set(logged.filter(s=>!items.some((it,i)=>it.exerciseId===s.exerciseId && i===s.exerciseOrder)).map(s=>s.exerciseId))].map(id=><li key={id}>{findExercise(id)?.name ?? id} · {logged.filter(s=>s.exerciseId===id && s.completed).length} series realizadas</li>)}</ul></div>}
+      <button className="text-action" onClick={()=>void ensureSession().then(()=>setExtraOpen(true)).catch(()=>toast("No se pudo abrir la sesión"))}>+ Añadir ejercicio extra</button>
+      {extraOpen && session && <StrengthLogModal initialSessionId={session.id} onClose={()=>setExtraOpen(false)} />}
       <div className="actions">
         <button className="btn primary" onClick={() => (doneSets ? setFinishOpen(true) : toast("Marca al menos una serie"))}>Guardar sesión</button>
         {session && (

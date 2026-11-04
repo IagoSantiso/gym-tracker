@@ -59,7 +59,7 @@ export async function loadDayBalance(date = localDate(), cat?: Catalog): Promise
   ]);
   const exerciseToday = kg ? [
     ...end.map((e) => ({ label: `${SPORT_LABEL[e.sport]} ${Math.round(e.durationSec / 60)} min`, kcal: Math.round(enduranceKcal(e, kg)) })),
-    ...str.map((w) => ({ label: `${w.title} ${w.durationMin ?? 60} min`, kcal: Math.round(strengthKcal(w.durationMin ?? 60, kg)) })),
+    ...str.map((w) => ({ label: `${w.title}${w.durationMin ? ` ${w.durationMin} min` : " · duración sin registrar"}`, kcal: Math.round(strengthKcal(w.durationMin ?? 0, kg)) })),
   ] : [];
   const bmr = ct.estimate?.ok && ct.estimate.bmr ? (ct.estimate.bmr[0] + ct.estimate.bmr[1]) / 2 : null;
   const tdeeMid = ct.estimate?.ok && ct.estimate.tdee ? (ct.estimate.tdee[0] + ct.estimate.tdee[1]) / 2 : null;
@@ -73,7 +73,7 @@ export async function loadDayBalance(date = localDate(), cat?: Catalog): Promise
   const compensation = energy.ok && energy.verdict === "over" && kg ? compensationOption({
     excess: energy.excess, weightKg: kg, maxPct: prefs?.compensationMaxPct ?? 30,
     hardSessionToday: planned.some((p) => p.intensity === "hard" && p.status !== "cancelled") || end.some((e) => (e.rpe ?? 0) >= 8),
-    exerciseMinToday: end.reduce((a, e) => a + e.durationSec / 60, 0) + str.reduce((a, w) => a + (w.durationMin ?? 60), 0),
+    exerciseMinToday: end.reduce((a, e) => a + e.durationSec / 60, 0) + str.reduce((a, w) => a + (w.durationMin ?? 0), 0),
     hasDiabetes: !!diab?.enabled && diab.diabetesType === "type1",
   }) : null;
   return { ...b, date, logs, remaining, targets, options, energy, compensation, exerciseToday };
