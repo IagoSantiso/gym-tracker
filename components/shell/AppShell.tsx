@@ -89,7 +89,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
           <main id="main" className="page">
-            <div className="wrap" style={{ paddingBottom: immersive ? 160 : undefined }}>
+            <div className="app-wrap" style={{ paddingBottom: immersive ? 160 : undefined }}>
               {error ? (
                 <div className="card" style={{ marginTop: 24 }}>
                   <h3>No se pudo abrir la base de datos local</h3>

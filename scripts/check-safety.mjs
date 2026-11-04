@@ -23,7 +23,7 @@ const walk = (dir, out = []) => {
 };
 const src = [...walk(join(root, "app")), ...walk(join(root, "components")), ...walk(join(root, "lib")), ...walk(join(root, "hooks"))].filter((f) => /\.(ts|tsx)$/.test(f));
 for (const f of src) {
-  const rel = relative(root, f);
+  const rel = relative(root, f).replaceAll("\\", "/");
   const code = readFileSync(f, "utf8");
   const serverSide = rel.startsWith("lib/server/") || rel.startsWith("app/api/");
   for (const s of SECRETS) if (new RegExp(`env\\.${s}|env\\[["']${s}`).test(code) && !serverSide) errors.push(`${rel}: lee ${s} fuera del servidor`);

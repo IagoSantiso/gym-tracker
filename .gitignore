@@ -11,3 +11,6 @@ next-env.d.ts
 *.tsbuildinfo
 public/pdf.worker.min.mjs
 tests/e2e/screenshots/
+
+# Local CLI cache
+supabase/.temp/

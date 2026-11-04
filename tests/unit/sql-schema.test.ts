@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { PGlite } from "@electric-sql/pglite";
 import { describe, expect, it } from "vitest";
@@ -8,7 +8,7 @@ import { SYNC_TABLES, dependencyOrder, syncColumns, toSnake } from "@/lib/db/sch
 const A = "11111111-1111-4111-8111-111111111111";
 const B = "22222222-2222-4222-8222-222222222222";
 
-async function bootstrap() {
+async function bootstrap(sql = generateSql()) {
   const pg = new PGlite();
   // Stub mínimo del esquema auth de Supabase
   await pg.exec(`
@@ -19,15 +19,19 @@ async function bootstrap() {
     create role authenticated;
     insert into auth.users values ('${A}'), ('${B}');
   `);
-  await pg.exec(generateSql());
+  await pg.exec(sql);
   await pg.exec(`grant usage on schema public to authenticated; grant all on all tables in schema public to authenticated;`);
   return pg;
 }
 
 describe("migración SQL generada", () => {
-  it("coincide con el archivo versionado (ejecuta npm run db:sql si falla)", () => {
-    const file = readFileSync(join(process.cwd(), "supabase/migrations/20261101000000_nexo_schema.sql"), "utf8");
-    expect(file).toBe(generateSql());
+  it("las migraciones incrementales producen las columnas del esquema actual", async () => {
+    const dir = join(process.cwd(), "supabase/migrations");
+    const migrated = await bootstrap(readdirSync(dir).filter(f => f.endsWith(".sql")).sort().map(f => readFileSync(join(dir, f), "utf8")).join("\n"));
+    const generated = await bootstrap();
+    const q = "select table_name, column_name, data_type, is_nullable from information_schema.columns where table_schema='public' order by table_name, column_name";
+    expect((await migrated.query(q)).rows).toEqual((await generated.query(q)).rows);
+    await migrated.close(); await generated.close();
   });
 
   it("se aplica en Postgres y aísla datos por usuario con RLS", async () => {

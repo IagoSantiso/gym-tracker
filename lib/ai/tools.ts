@@ -9,6 +9,15 @@ import { NewProduct } from "./food-product";
 import type { ChatAttachment } from "./attachments";
 import type { ConsentKind } from "@/lib/db/types";
 
+export const PantryDraft = z.strictObject({
+  items: z.array(z.strictObject({
+    food_id: z.string().max(80).nullable(), name: z.string().trim().min(1).max(120),
+    grams: z.number().min(0).max(100000).nullable(),
+    location: z.enum(["fridge", "freezer", "pantry"]), opened: z.boolean().nullable(),
+    use_by: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    evidence: z.string().min(1).max(300),
+  })).min(1).max(40),
+});
 export const Meta = z.strictObject({
   assumptions: z.array(z.string().max(300)).max(8),
   data_used: z.array(z.string().max(200)).max(10),
@@ -159,6 +168,7 @@ export interface ToolDef {
 }
 
 export const TOOLS: ToolDef[] = [
+  { name: "propose_pantry_items", kind: "write", consent: "ai_nutrition", schema: PantryDraft, description: "Proponer añadir existencias visibles en fotos o indicadas por el usuario a su cocina. No registra comidas consumidas. food_id del catálogo o null si no existe. grams=null cuando no se sabe; no inventar cantidades, caducidades ni envases abiertos. use_by solo si es legible o lo indica el usuario. Aporta evidencia y dudas en cada elemento. El usuario revisa y acepta antes de guardar. Añade lotes nuevos, no sustituye ni borra inventario previo." },
   { name: "propose_food_products", kind: "write", consent: "ai_nutrition", schema: ProposeFoodProducts, description: "Propone guardar productos nuevos de etiqueta, datos del usuario o estimación explícita. Valores POR 100 g, procedencia y base escurrido/tal cual. No se guardan hasta aceptar. Si se usarán en una comida usa propose_meal_variant.new_products para crear productos y cena en una sola propuesta." },
   { name: "get_user_profile_summary", kind: "read", consent: "ai_assistant", schema: Empty, description: "Resumen del perfil: objetivos, preferencias, experiencia, disponibilidad semanal y material. Sin datos clínicos." },
   { name: "get_training_history", kind: "read", consent: "ai_training", schema: Days, description: "Sesiones de fuerza (por ejercicio: mejor peso, reps, e1RM estimado) y de resistencia de los últimos N días." },

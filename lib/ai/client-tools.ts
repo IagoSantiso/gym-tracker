@@ -8,7 +8,7 @@ import { productRecord, type NewProduct } from "./food-product";
 import { tbl } from "@/lib/db/db";
 import { active, all } from "@/lib/db/repo";
 import type { ConsentKind, PlannedItem, ProposalOp } from "@/lib/db/types";
-import { TOOL_BY_NAME, validateToolInput, type ToolCall, type ProposeSchedule, type TrainingPlanDraft, type MealPlanDraft, type RecipeDraft, type SaveNote, type Alternatives, type Meta, type LogMealEstimate, type MealVariant, type CompensationChoice, type ProposeFoodProducts } from "./tools";
+import { TOOL_BY_NAME, validateToolInput, type ToolCall, type ProposeSchedule, type TrainingPlanDraft, type MealPlanDraft, type RecipeDraft, type SaveNote, type Alternatives, type Meta, type LogMealEstimate, type MealVariant, type CompensationChoice, type ProposeFoodProducts, type PantryDraft } from "./tools";
 import type { z } from "zod";
 import type { Food } from "@/lib/db/types";
 import { addDays, localDate, minutesOfDay, weekStartOf } from "@/lib/domain/time";
@@ -125,7 +125,8 @@ const READ: Record<string, (input: never) => Promise<unknown>> = {
         return { recipe_id: r.id, name: r.name, slots: r.slots, kcal: Math.round(t.kcal), carbs_available_g: Math.round(t.carbsAvailableG), protein_g: Math.round(t.proteinG), fiber_g: r1(t.fiberG), allergens: allergensOf(r.ingredients, cat.food), minutes: r.prepMin + r.cookMin };
       }),
       foods: cat.foods.map((f) => ({ food_id: f.id, name: f.name, state: f.state })),
-      pantry: pantry.map((p) => ({ name: p.name, grams: Math.round(p.grams) })),
+      shopping_context: pr?.foodContext ?? null,
+      pantry: pantry.map((p) => ({ item_id: p.id, food_id: p.foodId, name: p.name, grams: p.quantityKnown === false ? null : Math.round(p.grams), location: p.location ?? "pantry", opened: p.opened ?? null, use_by: p.useBy ?? null, recipe_id: p.recipeId ?? null, portions: p.portions ?? null })),
     };
   },
   async get_nutrition_summary({ days }: { days: number }) {
@@ -237,6 +238,14 @@ async function prepareProducts(products: z.infer<typeof NewProduct>[]) {
 }
 
 async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
+  if (name === "propose_pantry_items") {
+    const x = input as z.infer<typeof PantryDraft>;
+    const cat = await loadCatalog();
+    if (x.items.some(i => i.food_id && !cat.food(i.food_id))) return { content: "food_id no existe. Consulta get_food_inventory o usa null para guardar sin vincular.", isError: true };
+    const ops: ProposalOp[] = x.items.map(i => ({ op: "create", table: "pantry_items", record: { id: crypto.randomUUID(), foodId: i.food_id ?? "unlisted:" + i.name.toLocaleLowerCase("es"), name: i.name, grams: i.grams ?? 0, quantityKnown: i.grams != null, location: i.location, opened: i.opened, useBy: i.use_by, recipeId: null, portions: null } }));
+    const result = await createProposal({ domain: "nutrition", kind: "ai_pantry", title: "Revisar alimentos de mi cocina", summary: x.items.map(i => i.name + ": " + (i.grams == null ? "cantidad desconocida" : i.grams + " g")).join(" · ").slice(0, 1000), reasons: x.items.map(i => i.name + ": " + i.evidence), dataUsed: ["Foto o descripción del usuario", "Catálogo de alimentos"], assumptions: ["Se añaden lotes; revisa que no estén ya inventariados."], warnings: ["Una foto no verifica el estado del alimento ni sus alérgenos. Las cantidades desconocidas no se descuentan de la compra."], confidence: "low", ops, inverse: [], origin: "ai", requiresApproval: true, expiresAt: null });
+    return "error" in result ? {content: result.error, isError: true} : {content: "Inventario propuesto. Revisa y acepta la propuesta; después puedes corregir cada elemento en Mi cocina."};
+  }
   if (name === "propose_food_products") {
     const x = input as z.infer<typeof ProposeFoodProducts>;
     const batch = await prepareProducts(x.products);

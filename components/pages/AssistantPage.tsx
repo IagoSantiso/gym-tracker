@@ -32,7 +32,7 @@ const TOOL_LABEL: Record<string, string> = {
   get_nutrition_summary: "nutrición", get_cgm_period_summary: "glucosa (agregada)", get_recovery_summary: "recuperación",
   propose_schedule_changes: "propuesta de plan", draft_training_plan: "borrador de rutina", draft_meal_plan: "propuesta de menú",
   draft_recipe: "receta propuesta", draft_weekly_summary: "resumen semanal", save_user_note: "nota",
-  propose_food_products: "productos nuevos", get_day_balance: "balance del día", log_meal_estimate: "registro de comida", propose_meal_variant: "variante de comida", propose_compensation_activity: "actividad de compensación",
+  propose_pantry_items: "inventario de cocina", propose_food_products: "productos nuevos", get_day_balance: "balance del día", log_meal_estimate: "registro de comida", propose_meal_variant: "variante de comida", propose_compensation_activity: "actividad de compensación",
 };
 
 export function AssistantPage() {

@@ -24,7 +24,10 @@ export function proposeReschedule(items: PlannedItem[], itemId: string, today: s
   const it = items.find((i) => i.id === itemId);
   if (!it || it.locked) return null;
   const weekEnd = addDays(it.weekStart, 6);
-  for (let d = addDays(today, 1); d <= weekEnd; d = addDays(d, 1)) {
+  // Keep date imports out of the for-update expression (Turbopack 16.4 mishandles it).
+  for (let offset = 1; offset <= 7; offset++) {
+    const d = addDays(today, offset);
+    if (d > weekEnd) break;
     const busy = items.some((x) => x.id !== it.id && x.date === d && x.kind !== "rest" && x.status !== "cancelled");
     const lockedDay = items.some((x) => x.date === d && x.locked);
     if (busy || lockedDay) continue;
@@ -122,6 +125,7 @@ export const PROPOSAL_WHITELIST: Record<string, string[] | "*"> = {
   preferences: ["deloadActiveWeek", "adaptationMode", "deloadEveryWeeks"],
   goals: ["weightLossRatePct", "notes"],
   foods: ["name", "brand", "barcode", "state", "per100", "carbBasis", "sourceId", "sourceRef", "retrievedAt", "section", "tags", "allergens", "notes", "source"],
+  pantry_items: ["foodId", "name", "grams", "location", "quantityKnown", "opened", "useBy", "recipeId", "portions"],
   recipes: "*",
   recipe_ingredients: "*",
   user_notes: "*",

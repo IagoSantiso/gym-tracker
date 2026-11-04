@@ -1,5 +1,16 @@
 # Estado del proyecto — NEXO v1
 
+## Cocina personal — 2026-11-04
+
+- Mi cocina: nevera, congelador, despensa y raciones preparadas; cantidades conocidas/desconocidas, fechas, edición manual y contexto de compra local.
+- Inventario desde fotos mediante el asistente existente: borrador editable y aceptación explícita, sin registrar comida consumida ni inventar pesos.
+- Dos bases de desayuno con tomate/lechuga y café con leche; rotación, frecuencias de recetas y bacalao ocasional por defecto.
+- Sustitución local por ingrediente, con cantidades, compatibilidad culinaria, exclusiones, disponibilidad y efecto en plato/día; catálogo ampliado sin tokens y asistente opcional. Variantes aisladas y reversibles.
+- Menú que prioriza existencias y fechas próximas; compra que descuenta existencias confirmadas. Consumo idempotente, devolución y raciones preparadas sin doble descuento.
+- Migración incremental aplicada en Supabase, con RLS conservado. Instantánea SQL actual separada de las migraciones históricas.
+- Validación: 159 tests unitarios, build de producción, seguridad del bundle, recorridos móviles y offline. Fotografías probadas mediante proveedor simulado en las pruebas automatizadas.
+- Documentación de uso y límites: `docs/KITCHEN.md`.
+
 Última actualización: **2026-11-02**. Rama: `claude/gym-tracker-pwa-migration-0v1inn`. Punto de restauración previo: tag `restore/pre-nexo` (commit `4e7ee9b`).
 
 ## Resumen

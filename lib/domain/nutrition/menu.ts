@@ -5,10 +5,11 @@
  * Ajusta raciones (0,75–1,5) para acercarse al rango energético si existe; nunca por debajo de 0,75.
  */
 import type { MealSlot, NutrientTotals, RecipeIngredientData } from "@/lib/db/types";
+import { coverage, stockGrams, type Stock } from "./kitchen";
 import { addDays } from "@/lib/domain/time";
 import { allergensOf, recipeNutrition, type FoodLike } from "./calc";
 
-export const MENU_VERSION = "menu-1.0";
+export const MENU_VERSION = "menu-2.0";
 
 export interface RecipeLike {
   id: string;
@@ -31,8 +32,11 @@ export interface MenuConstraints {
   blacklist: string[];
   favorites: string[];
   maxCookMin: number;
+  stock?: Stock[];
+  frequencies?: Record<string, string>;
+  revision?: number;
   kcalTarget?: [number, number] | null;
-  locked: { date: string; slot: MealSlot; recipeId: string; servings: number }[];
+  locked: { date: string; slot: MealSlot; recipeId: string; servings: number; reserveStock?: boolean }[];
 }
 
 export interface PlannedMeal {
@@ -71,39 +75,52 @@ export function eligibleRecipes(recipes: RecipeLike[], foods: (id: string) => Fo
 }
 
 export function generateMenu(recipes: RecipeLike[], foods: (id: string) => FoodLike | undefined, c: MenuConstraints): PlannedMeal[] {
-  const rand = rng(c.weekStart);
+  const rand = rng(c.weekStart + ":" + (c.revision ?? 0));
   const pool = eligibleRecipes(recipes, foods, c);
   const kcalOf = new Map(pool.map((r) => [r.id, recipeNutrition(r.ingredients, foods, 1, r.servings).totals.kcal]));
   const out: PlannedMeal[] = [];
+  const spent = new Map<string, number>();
+  let remaining = stockGrams(c.stock ?? [], c.weekStart);
+  const counts = new Map<string, number>();
   const lastUsed = new Map<string, number>();
   for (let d = 0; d < 7; d++) {
     const date = addDays(c.weekStart, d);
+    remaining = stockGrams(c.stock ?? [], date);
+    for (const [id,g] of spent) remaining.set(id, Math.max(0, (remaining.get(id) ?? 0) - g));
     const training = c.trainingDates.includes(date);
     const daySlots = c.slots.filter((s) => (s === "pre" || s === "post" ? training : true));
     for (const slot of daySlots) {
       const locked = c.locked.find((l) => l.date === date && l.slot === slot);
       if (locked) {
+        const r = recipes.find(r => r.id === locked.recipeId);
+        if (locked.reserveStock !== false) r?.ingredients.forEach(i => {
+          const g = i.grams * locked.servings / r.servings;
+          remaining.set(i.foodId, Math.max(0, (remaining.get(i.foodId) ?? 0) - g));
+          spent.set(i.foodId, (spent.get(i.foodId) ?? 0) + g);
+        });
+        counts.set(locked.recipeId, (counts.get(locked.recipeId) ?? 0) + 1);
         out.push({ ...locked });
         lastUsed.set(locked.recipeId, d);
         continue;
       }
-      // Sobras: la comida de hoy puede ser la cena de ayer si es apta para lote
-      if (slot === "lunch" && d > 0) {
-        const prevDinner = out.find((m) => m.date === addDays(date, -1) && m.slot === "dinner");
-        const rec = prevDinner && pool.find((r) => r.id === prevDinner.recipeId);
-        if (rec?.batchFriendly && !prevDinner?.leftoverOf && rand() < 0.5) {
-          out.push({ date, slot, recipeId: rec.id, servings: prevDinner!.servings, leftoverOf: addDays(date, -1) });
-          continue;
-        }
-      }
       const weekday = d < 5;
       const cands = pool
         .filter((r) => r.slots.includes(slot))
+        .filter(r => c.frequencies?.[r.id] !== "never" && !(c.frequencies?.[r.id] === "occasional" && (counts.get(r.id) ?? 0) >= 1))
+        .filter(r => c.frequencies?.[r.id] !== "stock_only" || coverage(r.ingredients, remaining, (c.kcalTarget && slot !== "breakfast" ? 1.5 : 1) / r.servings).missing.length === 0)
         .filter((r) => !(weekday && (slot === "lunch" || slot === "breakfast")) || r.prepMin + r.cookMin <= c.maxCookMin || r.batchFriendly)
         .map((r) => {
           const since = lastUsed.has(r.id) ? d - lastUsed.get(r.id)! : 99;
           let score = rand() * 2 + (c.favorites.includes(r.id) ? 2.5 : 0);
-          if ((slot === "lunch" || slot === "dinner") && since < 3) score -= 10;
+          if (slot === "breakfast" && r.id.startsWith("mis-tostadas-")) {
+            const family = r.id.split("-")[2];
+            const yesterday = out.find(m => m.slot === "breakfast" && m.date === addDays(date, -1));
+            if (yesterday?.recipeId.startsWith(`mis-tostadas-${family}-`)) score -= 8;
+          }
+          if (since < (slot === "breakfast" ? 2 : 3)) score -= 10;
+          const cover = coverage(r.ingredients, remaining, 1 / r.servings);
+          score += cover.ratio * 3;
+          if (r.ingredients.some(i => (c.stock ?? []).some(p => p.foodId === i.foodId && p.useBy && p.useBy >= date && p.useBy <= addDays(date, 2) && p.quantityKnown !== false && (remaining.get(i.foodId) ?? 0) > 0))) score += 1;
           if (since === 0) score -= 20;
           if (r.slots[0] === slot) score += 0.5;
           return { r, score };
@@ -113,6 +130,10 @@ export function generateMenu(recipes: RecipeLike[], foods: (id: string) => FoodL
       if (!pick) continue;
       out.push({ date, slot, recipeId: pick.id, servings: 1 });
       lastUsed.set(pick.id, d);
+      const reserveFactor = c.kcalTarget && slot !== "breakfast" ? 1.5 : 1;
+      pick.ingredients.forEach(i => spent.set(i.foodId, (spent.get(i.foodId) ?? 0) + i.grams * reserveFactor / pick.servings));
+      counts.set(pick.id, (counts.get(pick.id) ?? 0) + 1);
+      pick.ingredients.forEach(i => remaining.set(i.foodId, Math.max(0, (remaining.get(i.foodId) ?? 0) - i.grams * reserveFactor / pick.servings)));
     }
   }
   return c.kcalTarget ? scaleToTarget(out, kcalOf, c.kcalTarget, c.locked) : out;
@@ -129,7 +150,7 @@ export function scaleToTarget(
   meals.forEach((m) => byDate.set(m.date, [...(byDate.get(m.date) ?? []), m]));
   const steps = [0.75, 1, 1.25, 1.5];
   for (const [, day] of byDate) {
-    const adjustable = day.filter((m) => ["breakfast", "lunch", "dinner"].includes(m.slot) && !m.leftoverOf && !locked.some((l) => l.date === m.date && l.slot === m.slot));
+    const adjustable = day.filter((m) => ["lunch", "dinner"].includes(m.slot) && !m.leftoverOf && !locked.some((l) => l.date === m.date && l.slot === m.slot));
     const total = () => day.reduce((a, m) => a + (kcalOf.get(m.recipeId) ?? 0) * m.servings, 0);
     const mid = (lo + hi) / 2;
     for (let iter = 0; iter < 8; iter++) {
@@ -163,12 +184,13 @@ export function swapOptions(
   pool: RecipeLike[],
   foods: (id: string) => FoodLike | undefined,
   max = 5,
+  servings = 1,
 ): { recipe: RecipeLike; totals: NutrientTotals; dKcal: number; dCarbs: number }[] {
-  const base = recipeNutrition(current.ingredients, foods, 1, current.servings).totals;
+  const base = recipeNutrition(current.ingredients, foods, servings, current.servings).totals;
   return pool
     .filter((r) => r.id !== current.id && r.slots.includes(slot))
     .map((r) => {
-      const t = recipeNutrition(r.ingredients, foods, 1, r.servings).totals;
+      const t = recipeNutrition(r.ingredients, foods, servings, r.servings).totals;
       return { recipe: r, totals: t, dKcal: t.kcal - base.kcal, dCarbs: t.carbsAvailableG - base.carbsAvailableG };
     })
     .sort((a, b) => Math.abs(a.dKcal) / 100 + Math.abs(a.dCarbs) / 15 - (Math.abs(b.dKcal) / 100 + Math.abs(b.dCarbs) / 15) || a.recipe.id.localeCompare(b.recipe.id))

@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 const { chromium } = createRequire(import.meta.url)("playwright");
 const port = Number(process.env.E2E_ASSISTANT_PORT ?? 3211);
 const base = `http://localhost:${port}`;
-const server = spawn("node_modules/.bin/next", ["start", "-p", String(port)], { stdio: ["ignore", "pipe", "pipe"], detached: true });
+const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], { stdio: ["ignore", "pipe", "pipe"], detached: true });
 let browser;
 try {
   await new Promise((resolve, reject) => {
@@ -77,6 +77,6 @@ try {
   console.log("PASS asistente móvil: dictado revisable, imagen sin texto, quitar adjuntos, normalización, envío, privacidad y formatos no admitidos");
 } finally {
   await browser?.close();
-  try { process.kill(-server.pid, "SIGKILL"); } catch { /* ya terminado */ }
+  try { if (process.platform === "win32") server.kill(); else process.kill(-server.pid, "SIGKILL"); } catch { /* ya terminado */ }
 }
 
