@@ -74,6 +74,8 @@ export interface EnergyDayInput {
   plannedRestKcal: number;
   /** déficit diario buscado por el objetivo (0 = mantenimiento) */
   targetDeficit: number;
+  /** Canonical intake target shared with nutrition, including manually agreed targets. */
+  targetIntake?: [number, number] | null;
   /** ¿el día puede considerarse cerrado? (tarde-noche o sin comidas previstas por delante) */
   dayClosed?: boolean;
 }
@@ -111,16 +113,21 @@ export function energyDay(i: EnergyDayInput): EnergyDay {
   const projectedIntake = i.intakeKcal + i.plannedRestKcal;
   const balance = i.intakeKcal - spent;
   const projectedBalance = projectedIntake - spent;
-  const targetBalance = -Math.max(0, i.targetDeficit);
+  const targetBalance = i.targetIntake ? (i.targetIntake[0]+i.targetIntake[1])/2-spent : -Math.max(0, i.targetDeficit);
   const tol = 200;
   let verdict: DayVerdict = projectedBalance > targetBalance + tol ? "over" : projectedBalance < targetBalance - 500 ? "under" : "on_track";
   if (verdict === "under" && i.dayClosed === false) verdict = "in_progress";
   const excess = Math.max(0, projectedBalance - targetBalance - tol / 2);
-  const message =
+  let message =
     verdict === "on_track" ? (i.targetDeficit > 0 ? `Vas en objetivo: déficit previsto de ~${r10(-projectedBalance)} kcal (buscado ~${r10(i.targetDeficit)}).` : "Vas en objetivo para mantener.")
     : verdict === "over" ? `La previsión del día queda ~${r10(projectedBalance - targetBalance)} kcal por encima de tu objetivo.`
     : verdict === "in_progress" ? `Día en curso: te quedan ~${r10(targetBalance - projectedBalance)} kcal hasta tu objetivo de hoy.`
     : `La previsión queda muy por debajo de lo que necesitas (~${r10(targetBalance - projectedBalance)} kcal): no te quedes corto, mantén las comidas que quedan.`;
+  if(i.targetIntake) {
+    const [low,high]=i.targetIntake;
+    verdict=projectedIntake>high ? "over" : projectedIntake<low ? (i.dayClosed ? "under":"in_progress") : "on_track";
+    message=`Ingesta prevista ~${r10(projectedIntake)} kcal · objetivo ${low}–${high} kcal. ${i.dayClosed?"Registro confirmado.":"Registro del día pendiente de confirmar."}`;
+  }
   return { ok: true, base: r10(base), steps: r10(steps), exercise: r10(exercise), spent: r10(spent), intake: Math.round(i.intakeKcal), projectedIntake: Math.round(projectedIntake), balance: r10(balance), projectedBalance: r10(projectedBalance), targetBalance: r10(targetBalance), verdict, excess: r10(excess), message };
 }
 

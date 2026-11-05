@@ -110,3 +110,10 @@ Nada de esto bloquea el uso local. Detalle en `.env.example`.
 
 ## Próximos pasos sugeridos
 Ver `docs/ROADMAP.md` → «Siguiente iteración».
+
+## Rediseño del núcleo diario · 2026-11-05
+Implementado: navegación Hoy/Entreno/Comida/Evolución, diario editable con búsqueda, recientes/favoritas/unidades, cierre explícito y balance coherente, fuerza por tiempo, correcciones de actividad, filtros y favoritas de ejercicios, contexto semanal y herramientas secundarias. Se conservan rutas, historial, funciones clínicas y funcionamiento local/offline.
+
+Validación: pruebas de dominio y servicios en `tests/unit/diary.test.ts`; recorrido completo de navegador en `tests/e2e/daily-core.mjs`; migración SQL aditiva y RLS verificadas en PGlite. En este entorno Turbopack no puede abrir su puerto interno; la compilación de producción se verifica con `npm run build -- --webpack`. CI mantiene la compilación habitual con Turbopack.
+
+Verificación final: 179 pruebas unitarias generales y 2 regresiones adicionales de edición de alimentos/borrado concurrente; lint/seguridad y build de producción correctos. Los siete recorridos E2E pasan (general, asistente, PDF, cocina, Hoy, fuerza y núcleo diario), incluidos offline y anchos 320/390/768/1280. Migración aditiva aplicada y consultada en el proyecto Supabase `nexo`; no introduce nuevas alertas del asesor. Se mantienen los avisos preexistentes: credenciales OAuth sin políticas de cliente (aislamiento deliberado) y protección de contraseñas filtradas desactivada ([documentación](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)).

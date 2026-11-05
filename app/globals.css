@@ -601,3 +601,45 @@ dialog.modal:has(.swap-footer) .mh,dialog.modal:has(.swap-footer) .mf{flex-shrin
 .exercise-preview { display:flex; gap:8px; margin-top:12px; }
 .exercise-preview img { width:calc(50% - 4px); object-fit:cover; border-radius:8px; }
 @media(max-width:360px) { .today-item>summary { gap:6px; } .today-item>summary .badge { padding:3px 5px; } }
+
+/* Daily wellbeing core: four destinations and a compact, readable diary. */
+.nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+.more-sheet{top:64px;bottom:auto;left:auto;right:16px;width:min(320px,calc(100vw - 32px));max-height:calc(100dvh - 100px);overflow:auto}
+.energy-focus{display:flex;justify-content:space-between;gap:18px;align-items:center;margin:18px 0 12px}
+.energy-focus strong{display:block;font-size:clamp(34px,7vw,54px);line-height:1.1;letter-spacing:-1.5px;font-variant-numeric:tabular-nums}
+.energy-focus strong small{font-size:14px;font-weight:500;letter-spacing:0;color:var(--muted)}
+.energy-target{display:grid;gap:4px;font-size:12px;text-align:right;color:var(--muted)}
+.energy-target b{font-size:16px;color:var(--text)}
+.energy-target a{font-size:11px}
+.energy-meter{height:7px;background:var(--panel2);border-radius:10px;overflow:hidden}
+.energy-meter i{display:block;height:100%;border-radius:10px;background:var(--accent)}
+.energy-answer{font-weight:650;font-size:15px;margin:12px 0}
+.energy-context{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.energy-context b{color:var(--text);font-weight:600}
+.energy-explanation{margin-top:12px;font-size:12px;color:var(--muted)}
+.diary-confirm{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+.diary-confirm .text-action{font-size:12px;flex-shrink:0}
+.daily-summary{display:flex;gap:18px;margin:0 0 18px;font-size:13px;color:var(--muted)}
+.daily-summary b{color:var(--text)}
+.today-agenda{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}
+.diary-slot h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:18px 0 4px}
+.diary-row{display:flex;width:100%;align-items:center;justify-content:space-between;gap:14px;text-align:left;padding:14px 0;min-height:56px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);font:inherit;cursor:pointer}
+.diary-row:hover{background:var(--panel2)}
+.diary-row>span:first-child{min-width:0;overflow-wrap:anywhere}
+.diary-row b{font-size:14px;font-weight:600}
+.diary-row small{display:block;font-size:11px;color:var(--muted);margin-top:4px}
+.diary-kcal{flex-shrink:0;text-align:right;font-size:12px;font-variant-numeric:tabular-nums}
+.diary-date{display:flex;align-items:end;gap:16px}
+.search-results{max-height:280px;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:0 12px}
+.meal-recents h3{font-size:13px}
+.today-energy{background:linear-gradient(135deg,var(--panel),var(--lime-soft));border-color:var(--line2)}
+.today-header{margin-bottom:18px}
+.today-support{margin-top:20px}
+@media(min-width:1000px){.more-sheet{display:grid}}
+@media(max-width:700px){.today-agenda{grid-template-columns:1fr}.today-hub{padding-top:12px}.today-header h1{font-size:30px}.today-energy{padding:18px}.energy-target b{font-size:13px}.diary-confirm{align-items:flex-start;flex-direction:column;gap:4px}.daily-summary{font-size:12px;gap:12px}.today-section-head{gap:8px}.today-section-head h2{font-size:17px}.today-section-head .text-action{font-size:12px}}
+.week-energy{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin:18px 0}
+.week-energy>div{display:flex;flex-direction:column;align-items:center;gap:6px;font-size:11px}
+.week-energy strong{font-size:14px;font-variant-numeric:tabular-nums}
+.week-energy small{font-size:9px;text-align:center;color:var(--muted)}
+.week-dot{width:6px;height:6px;border-radius:50%;background:var(--line2)}
+.week-dot.complete{background:var(--accent)}

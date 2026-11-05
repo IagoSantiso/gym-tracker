@@ -82,7 +82,7 @@ try {
   ok(true, "check-in de recuperación");
 
   /* Plan */
-  await page.getByRole("link", { name: "Plan" }).first().click();
+  await page.goto(BASE + "/entrenamiento?tab=semana", {waitUntil:"networkidle"});
   await page.getByText("Plan semanal").first().waitFor();
   await page.waitForTimeout(800);
   const planItems = await page.locator(".li").count();
@@ -126,15 +126,16 @@ try {
   ok((await page.locator('input[type="checkbox"]').count()) > 5, "lista de la compra consolidada");
   await shot("05-compra");
   await page.goto(BASE + "/nutricion?tab=hoy", { waitUntil: "networkidle" });
+  await page.getByText(/Menú pendiente ·/).click();
   const hecha = page.getByRole("button", { name: "Hecha" }).first();
   if (await hecha.isVisible()) {
     await hecha.click();
     await page.getByText("Comida registrada").waitFor();
   }
-  ok(await page.getByText("Registrado hoy").isVisible(), "comida marcada como hecha");
+  ok(await page.getByRole("heading", {name:"Lo que has comido",exact:true}).isVisible(), "comida marcada como hecha");
   if (!(await page.locator(".meal-details").first().evaluate(e=>e.open))) await page.locator(".meal-details > summary").first().click();
   ok(await page.locator("details.portions summary").first().isVisible().catch(() => false) && /\d+ g/.test(await page.locator("details.portions").first().textContent()), "cantidades por ingrediente en las comidas de hoy");
-  ok(await page.getByText("Balance del día").isVisible(), "balance del día visible");
+  ok(await page.getByText("Tu balance de hoy").isVisible(), "balance del día visible");
   await shot("05b-balance");
 
   /* Diabetes: importación CSV sintético */
@@ -175,6 +176,7 @@ try {
   await page.getByText("Activa el asistente").waitFor();
   ok(!(await page.getByRole("checkbox", { name: /Usar el asistente/ }).isChecked()), "IA desactivada por defecto (opt-in)");
   await page.goto(BASE + "/nutricion?tab=hoy", { waitUntil: "networkidle" });
+  await page.getByText("Nutrición y planificación en detalle",{exact:true}).click();
   await page.getByLabel("Qué has comido o qué tienes").fill("He desayunado tortilla francesa y dos tostadas");
   await page.getByRole("button", { name: "Ajustar con el asistente" }).click();
   await page.waitForURL(/\/asistente/);

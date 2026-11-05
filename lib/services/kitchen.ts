@@ -41,12 +41,17 @@ export async function undoStockUsage(logId: string) {
 }
 
 export async function deleteFoodLog(logId: string) {
-  const log = await tbl("food_logs").get(logId);
-  if (!active(log)) return;
-  await undoStockUsage(logId);
-  if (log.mealEntryId) await patch("meal_entries", log.mealEntryId, { status: "planned" });
-  await remove("food_logs", logId);
-  await refreshShoppingList(weekStartOf(log.date));
+  const db=getDb();
+  const date=await db.transaction("rw",[db.table("food_logs"),db.table("pantry_items"),db.table("meal_entries"),db.outbox],async()=>{
+    const log=await tbl("food_logs").get(logId);if(!active(log))return;
+    for(const u of log.stockUsage??[]) {
+      const stock=await tbl("pantry_items").get(u.id);
+      if(active(stock))await patch("pantry_items",u.id,{grams:stock.grams+u.grams,portions:(stock.portions??0)+(u.portions??0)});
+    }
+    if(log.mealEntryId)await patch("meal_entries",log.mealEntryId,{status:"planned"});
+    await remove("food_logs",logId);return log.date;
+  });
+  if(date)await refreshShoppingList(weekStartOf(date));
 }
 
 /** Save a meal-specific variant; never mutate the shared recipe or another day's portions. */
@@ -76,7 +81,6 @@ export async function eatLeftover(stockId: string, slot: "lunch" | "dinner", por
     const r = cat.recipe(p.recipeId);
     if (!r) throw new Error("No se encuentra la receta.");
     const { lines, totals } = recipeNutrition(r.ingredients, cat.food, portions, r.servings);
-    await replacePlannedSlot(date, slot);
     await put("food_logs", { id: newId(), date, eatenAt: new Date().toISOString(), slot, recipeId: r.id, servings: portions, title: p.name, totals, items: lines.map(i => ({ foodId: i.foodId, grams: i.grams })), source: "calculated", stockUsage: [{ id: p.id, grams: 0, portions }] });
     await patch("pantry_items", p.id, { portions: (p.portions ?? 0) - portions });
   });

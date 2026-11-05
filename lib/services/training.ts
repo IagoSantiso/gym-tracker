@@ -130,9 +130,9 @@ export async function completeWorkout(opts: { plannedItemId?: string; sessionId?
 }
 
 /** Ejercicio extra ya realizado. requestId hace idempotente un reintento del formulario. */
-export async function logStrengthExercise(opts: { requestId: string; date: string; startedAt: string; exerciseId: string; sets: number; reps: number; weightKg: number | null; durationMin: number | null; sessionId?: string }) {
+export async function logStrengthExercise(opts: { requestId: string; date: string; startedAt: string; exerciseId: string; sets: number; reps: number; seconds?: number | null; weightKg: number | null; durationMin: number | null; sessionId?: string }) {
   const ex = findExercise(opts.exerciseId);
-  if (!ex || !Number.isInteger(opts.sets) || opts.sets < 1 || opts.sets > 30 || !Number.isInteger(opts.reps) || opts.reps < 1 || opts.reps > 1000 || (opts.weightKg != null && (!Number.isFinite(opts.weightKg) || opts.weightKg < 0 || opts.weightKg > 1000)) || (opts.durationMin != null && (!Number.isFinite(opts.durationMin) || opts.durationMin <= 0 || opts.durationMin > 600))) throw new Error("Revisa ejercicio, series, repeticiones, peso y duración.");
+  if (!ex || !Number.isInteger(opts.sets) || opts.sets < 1 || opts.sets > 30 || (opts.seconds != null ? (!Number.isInteger(opts.seconds) || opts.seconds<1 || opts.seconds>3600) : (!Number.isInteger(opts.reps) || opts.reps < 1 || opts.reps > 1000)) || (opts.weightKg != null && (!Number.isFinite(opts.weightKg) || opts.weightKg < 0 || opts.weightKg > 1000)) || (opts.durationMin != null && (!Number.isFinite(opts.durationMin) || opts.durationMin <= 0 || opts.durationMin > 600))) throw new Error("Revisa ejercicio, series, repeticiones, peso y duración.");
   return serial("training", async () => {
     const db = getDb();
     return db.transaction("rw", [db.table("workout_sessions"), db.table("exercise_sets"), db.outbox], async () => {
@@ -143,7 +143,26 @@ export async function logStrengthExercise(opts: { requestId: string; date: strin
       else if (opts.durationMin && session.durationMin != null) await patch("workout_sessions", session.id, { durationMin: session.durationMin + opts.durationMin });
       const previous = (await tbl("exercise_sets").where("sessionId").equals(session.id).toArray()).filter(active);
       const order = Math.max(-1, ...previous.map(s => s.exerciseOrder)) + 1;
-      for (let j = 0; j < opts.sets; j++) await upsertSet({ id: `${opts.requestId}:${j}`, sessionId: session.id, exerciseId: ex.id, exerciseOrder: order, setIndex: j, weightKg: opts.weightKg, reps: opts.reps, rir: null, completed: true, completedAt: opts.startedAt, isWarmup: false, targetRepsMin: null, targetRepsMax: null, notes: "Ejercicio añadido manualmente" });
+      for (let j = 0; j < opts.sets; j++) await upsertSet({ id: `${opts.requestId}:${j}`, sessionId: session.id, exerciseId: ex.id, exerciseOrder: order, setIndex: j, weightKg: opts.weightKg, reps: opts.seconds ? null : opts.reps, durationSec:opts.seconds ?? null, rir: null, completed: true, completedAt: opts.startedAt, isWarmup: false, targetRepsMin: null, targetRepsMax: null, notes: "Ejercicio añadido manualmente" });
+    });
+  });
+}
+
+/** Corrections are atomic and scoped to the selected session. */
+export async function editWorkout(id: string, input: {title:string;durationMin:number|null;sets:import("@/lib/db/types").ExerciseSet[]}) {
+  if(!input.title.trim() || (input.durationMin!=null && (!Number.isFinite(input.durationMin)||input.durationMin<=0||input.durationMin>600))) throw new Error("Revisa nombre y duración.");
+  for(const s of input.sets) {
+    if(s.sessionId!==id || (s.weightKg!=null&&(!Number.isFinite(s.weightKg)||s.weightKg<0||s.weightKg>1000)) || (s.reps!=null&&(!Number.isInteger(s.reps)||s.reps<1||s.reps>1000)) || (s.durationSec!=null&&(!Number.isInteger(s.durationSec)||s.durationSec<1||s.durationSec>3600))) throw new Error("Revisa los valores de las series.");
+  }
+  return serial("training",async()=>{
+    const db=getDb();
+    await db.transaction("rw",[db.table("workout_sessions"),db.table("exercise_sets"),db.outbox],async()=>{
+      const session=await tbl("workout_sessions").get(id);if(!active(session))throw new Error("Sesión no disponible.");
+      await patch("workout_sessions",id,{title:input.title.trim(),durationMin:input.durationMin});
+      for(const s of input.sets) {
+        const saved=await tbl("exercise_sets").get(s.id);if(!active(saved)||saved.sessionId!==id)throw new Error("La serie ha cambiado. Vuelve a abrir la sesión.");
+        await patch("exercise_sets",s.id,{weightKg:s.weightKg,reps:s.reps,durationSec:s.durationSec,completed:s.completed,completedAt:s.completed?(saved.completedAt??new Date().toISOString()):null});
+      }
     });
   });
 }

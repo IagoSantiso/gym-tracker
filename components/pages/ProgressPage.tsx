@@ -1,4 +1,5 @@
 "use client";
+import { WeeklyEnergy } from "@/components/nutrition/WeeklyEnergy";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Card, Empty, Field, Icon, Kpi, Notice, PageHead, SourceBadge, Tabs, confirmAction, useTabParam, useToast } from "@/components/ui";
@@ -24,14 +25,14 @@ export function ProgressPage() {
   const [quick, setQuick] = useState<QuickKind>(null);
   return (
     <>
-      <PageHead eyebrow="Progreso" title="Tendencias, no días sueltos" actions={<Link className="btn" href="/informe"><Icon name="printer" />Informe para consulta</Link>}>
-        Evolución de peso, fuerza y resistencia, calendario de sesiones y revisión semanal con un pequeño experimento de hábitos.
+      <PageHead eyebrow="Evolución" title="Tendencias, no días sueltos" actions={<Link className="btn" href="/informe"><Icon name="printer" />Informe para consulta</Link>}>
+        Relaciona tu alimentación y actividad con la tendencia de peso de varias semanas.
       </PageHead>
       <Tabs label="Progreso" value={tab} onChange={setTab} tabs={[
         { id: "peso", label: "Peso" }, { id: "fuerza", label: "Fuerza" }, { id: "resistencia", label: "Resistencia" },
         { id: "calendario", label: "Calendario" }, { id: "semana", label: "Revisión semanal" },
       ]} />
-      {tab === "peso" && <WeightTab onAdd={() => setQuick("weight")} />}
+      {tab === "peso" && <div className="stack"><WeeklyEnergy/><WeightTab onAdd={() => setQuick("weight")} /></div>}
       {tab === "fuerza" && <StrengthTab />}
       {tab === "resistencia" && <EnduranceTab />}
       {tab === "calendario" && <CalendarTab />}

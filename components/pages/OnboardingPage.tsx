@@ -32,11 +32,13 @@ export function OnboardingPage() {
       const ws = weekStartOf(localDate());
       setBusy("Guardando tu perfil…");
       await withTimeout(patch("profiles", "me", { onboardingCompletedAt: nowIso(), draft: false }), "Guardar perfil");
+      if(step>=6) {
       setBusy("Creando el plan de la semana…");
       await withTimeout(generatePlan(ws), "Crear plan");
       setBusy("Creando el menú y la lista de la compra…");
       await withTimeout(generateWeekMenu(ws, { kcalTarget: null, keepLocked: true }), "Crear menú");
-      toast("¡Listo! Plan y menú de la semana creados");
+      }
+      toast(step>=6?"¡Listo! Plan y menú de la semana creados":"Perfil guardado. Ya puedes registrar tu día.");
       location.assign("/");
     } catch (e) {
       setBusy(null);
@@ -46,6 +48,7 @@ export function OnboardingPage() {
   const nav = (
     <div className="row between" style={{ marginTop: 16 }}>
       <button className="btn ghost" disabled={step === 0} onClick={() => setStep((s) => s - 1)}>Atrás</button>
+      {step===2&&<button className="btn" disabled={!!busy} onClick={()=>void finish()}>Guardar y empezar</button>}
       <span className="small dim">{step + 1} / {STEPS.length}</span>
       {step < STEPS.length - 1 ? <button className="btn primary" onClick={() => setStep((s) => s + 1)}>{step === 0 ? "Empezar" : "Siguiente"}</button>
         : <button className="btn primary" disabled={!!busy} onClick={() => void finish()}>{busy ? "Creando…" : "Crear mi semana"}</button>}

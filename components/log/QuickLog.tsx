@@ -12,6 +12,7 @@ import type { EnduranceType, GlucoseEventKind, MealSlot, Sport, UserNote } from 
 import { SLOT_LABEL } from "@/lib/domain/nutrition/recipes";
 import { loadCatalog, logFreeMeal, logManualMeal } from "@/lib/services/nutrition";
 import { recipeNutrition } from "@/lib/domain/nutrition/calc";
+import { MealLogModal } from "@/components/nutrition/MealLogModal";
 import { StrengthLogModal } from "@/components/training/StrengthLog";
 import { autoLinkPlanned } from "@/lib/services/training";
 import { all } from "@/lib/db/repo";
@@ -36,11 +37,11 @@ function useWhen(tz: string) {
   return { date, iso, ui };
 }
 
-export function QuickLog({ kind, onClose }: { kind: QuickKind; onClose: () => void }) {
+export function QuickLog({ kind, onClose, mealDate }: { kind: QuickKind; onClose: () => void; mealDate?: string }) {
   return (
     <>
       {kind === "weight" && <WeightModal onClose={onClose} />}
-      {kind === "meal" && <MealModal onClose={onClose} />}
+      {kind === "meal" && <MealLogModal onClose={onClose} initialDate={mealDate} />}
       {kind === "glucose" && <GlucoseModal onClose={onClose} />}
       {kind === "activity" && <ActivityModal onClose={onClose} />}
       {kind === "strength" && <StrengthLogModal onClose={onClose} />}
@@ -77,112 +78,6 @@ function WeightModal({ onClose }: { onClose: () => void }) {
           <NumInput value={kg} onChange={setKg} ariaLabel="Peso en kg" placeholder="p. ej. 82,4" />
         </Field>
         <Field label="Cintura (cm, opcional)"><NumInput value={waist} onChange={setWaist} ariaLabel="Cintura en cm" /></Field>
-        {w.ui}
-      </div>
-    </Modal>
-  );
-}
-
-function MealModal({ onClose }: { onClose: () => void }) {
-  const p = useProfile();
-  const w = useWhen(p.timezone);
-  const toast = useToast();
-  const cat = useLive(() => loadCatalog(), []);
-  const [mode, setMode] = useState<"recipe" | "foods" | "label">("recipe");
-  const [slot, setSlot] = useState<MealSlot>("lunch");
-  const [recipeId, setRecipeId] = useState("");
-  const [servings, setServings] = useState<number | null>(1);
-  const [items, setItems] = useState<{ foodId: string; grams: number | null }[]>([{ foodId: "", grams: null }]);
-  const [title, setTitle] = useState("");
-  const [carbs, setCarbs] = useState<number | null>(null);
-  const [kcal, setKcal] = useState<number | null>(null);
-  const [prot, setProt] = useState<number | null>(null);
-  const [fat, setFat] = useState<number | null>(null);
-  const preview = useMemo(() => {
-    if (!cat) return null;
-    if (mode === "recipe" && recipeId) {
-      const r = cat.recipe(recipeId);
-      return r ? recipeNutrition(r.ingredients, cat.food, servings ?? 1, r.servings).totals : null;
-    }
-    if (mode === "foods") {
-      const valid = items.filter((i) => i.foodId && i.grams);
-      return valid.length ? recipeNutrition(valid.map((i) => ({ foodId: i.foodId, grams: i.grams!, note: null })), cat.food, 1, 1).totals : null;
-    }
-    return null;
-  }, [cat, mode, recipeId, servings, items]);
-  const save = async () => {
-    if (mode === "recipe" && cat) {
-      const r = cat.recipe(recipeId)!;
-      const s = servings ?? 1;
-      const k = s / r.servings;
-      await logFreeMeal({ slot, title: `${r.name}${s !== 1 ? ` (×${s})` : ""}`, items: r.ingredients.map((i) => ({ foodId: i.foodId, grams: Math.round(i.grams * k) })), date: w.date, eatenAt: w.iso() });
-    } else if (mode === "foods") {
-      await logFreeMeal({ slot, title: title || "Comida", items: items.filter((i) => i.foodId && i.grams).map((i) => ({ foodId: i.foodId, grams: i.grams! })), date: w.date, eatenAt: w.iso() });
-    } else {
-      await logManualMeal({ slot, title: title || "Comida (etiqueta)", carbsG: carbs, kcal, proteinG: prot, fatG: fat, eatenAt: w.iso() });
-    }
-    toast("Comida registrada");
-    onClose();
-  };
-  const can = mode === "recipe" ? !!recipeId : mode === "foods" ? items.some((i) => i.foodId && i.grams) : carbs != null || kcal != null;
-  return (
-    <Modal open title="Registrar comida" onClose={onClose} footer={<Footer onClose={onClose} onSave={save} disabled={!can} />}>
-      <div className="stack">
-        <div className="row">
-          {(["recipe", "foods", "label"] as const).map((m) => (
-            <button key={m} className="chip" aria-pressed={mode === m} onClick={() => setMode(m)}>{m === "recipe" ? "Receta" : m === "foods" ? "Alimentos" : "Solo etiqueta"}</button>
-          ))}
-        </div>
-        <Field label="Momento">
-          <select value={slot} onChange={(e) => setSlot(e.target.value as MealSlot)}>
-            {(Object.keys(SLOT_LABEL) as MealSlot[]).map((s) => <option key={s} value={s}>{SLOT_LABEL[s]}</option>)}
-          </select>
-        </Field>
-        {mode === "recipe" && cat && (
-          <div className="grid g2">
-            <Field label="Receta">
-              <select value={recipeId} onChange={(e) => setRecipeId(e.target.value)}>
-                <option value="">Elige…</option>
-                {cat.recipes.filter((r) => r.slots.includes(slot) || true).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-            </Field>
-            <Field label="Raciones"><NumInput value={servings} onChange={setServings} ariaLabel="Raciones" /></Field>
-          </div>
-        )}
-        {mode === "foods" && cat && (
-          <>
-            <Field label="Nombre (opcional)"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="p. ej. Bocadillo" /></Field>
-            {items.map((it, i) => (
-              <div className="grid g2" key={i}>
-                <Field label={`Alimento ${i + 1}`}>
-                  <select value={it.foodId} onChange={(e) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, foodId: e.target.value } : x)))}>
-                    <option value="">Elige…</option>
-                    {cat.foods.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="Gramos"><NumInput value={it.grams} onChange={(v) => setItems((xs) => xs.map((x, j) => (j === i ? { ...x, grams: v } : x)))} ariaLabel="Gramos" /></Field>
-              </div>
-            ))}
-            <button className="btn sm ghost" onClick={() => setItems((x) => [...x, { foodId: "", grams: null }])}>+ Añadir alimento</button>
-          </>
-        )}
-        {mode === "label" && (
-          <>
-            <Field label="Descripción"><input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="p. ej. Barrita de avena" /></Field>
-            <div className="grid g3">
-              <Field label="Hidratos (g)"><NumInput value={carbs} onChange={setCarbs} ariaLabel="Hidratos en gramos" /></Field>
-              <Field label="Energía (kcal)"><NumInput value={kcal} onChange={setKcal} ariaLabel="Energía" /></Field>
-              <Field label="Proteína (g)"><NumInput value={prot} onChange={setProt} ariaLabel="Proteína" /></Field>
-              <Field label="Grasa (g)"><NumInput value={fat} onChange={setFat} ariaLabel="Grasa" /></Field>
-            </div>
-          </>
-        )}
-        {preview && (
-          <div className="notice info">
-            <div><b>{Math.round(preview.carbsAvailableG)} g</b> de hidratos disponibles · {Math.round(preview.kcal)} kcal · {Math.round(preview.proteinG)} g proteína · {Math.round(preview.fiberG)} g fibra <span className="badge src-calculated">Calculado</span>
-              <div className="xs dim">Estimación a partir de valores de referencia; no es una indicación de dosis.</div></div>
-          </div>
-        )}
         {w.ui}
       </div>
     </Modal>
