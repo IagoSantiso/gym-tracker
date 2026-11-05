@@ -1,4 +1,5 @@
 "use client";
+import { registerDueMeals } from "@/lib/services/meal-schedule";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -51,13 +52,20 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     ensureInitialized()
-      .then(() => {
+      .then(async () => {
+        await registerDueMeals();
         setReady(true);
         startSync();
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
   useEffect(() => setMoreOpen(false), [path]);
+  useEffect(()=>{
+    if(!ready)return;
+    const run=()=>{void registerDueMeals().catch(()=>{/* retry on next foreground tick */});};
+    const timer=setInterval(run,60000);document.addEventListener("visibilitychange",run);run();
+    return()=>{clearInterval(timer);document.removeEventListener("visibilitychange",run);};
+  },[ready,path]);
   useEffect(() => {
     if (!moreOpen) return;
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") { setMoreOpen(false); document.querySelector<HTMLButtonElement>('[aria-controls="more-sheet"]')?.focus(); } };

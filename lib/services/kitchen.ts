@@ -48,7 +48,7 @@ export async function deleteFoodLog(logId: string) {
       const stock=await tbl("pantry_items").get(u.id);
       if(active(stock))await patch("pantry_items",u.id,{grams:stock.grams+u.grams,portions:(stock.portions??0)+(u.portions??0)});
     }
-    if(log.mealEntryId)await patch("meal_entries",log.mealEntryId,{status:"planned"});
+    if(log.mealEntryId)await patch("meal_entries",log.mealEntryId,{status:"skipped",locked:false});
     await remove("food_logs",logId);return log.date;
   });
   if(date)await refreshShoppingList(weekStartOf(date));
@@ -60,14 +60,14 @@ export async function applyIngredientVariant(entryId: string, expectedRecipeId: 
   const db = getDb();
   await db.transaction("rw", [db.table("recipes"), db.table("recipe_ingredients"), db.table("meal_entries"), db.outbox], async () => {
     const e = await tbl("meal_entries").get(entryId);
-    if (!active(e) || e.recipeId !== expectedRecipeId || e.status !== "planned") throw new Error("La comida ha cambiado. Vuelve a abrirla.");
+    if (!active(e) || e.recipeId !== expectedRecipeId) throw new Error("La comida ha cambiado. Vuelve a abrirla.");
     const r = cat.recipe(e.recipeId);
     if (!r) throw new Error("Receta no disponible.");
     const saved = await saveRecipe({ name, slots: [e.slot], servings: r.servings, prepMin: r.prepMin, cookMin: r.cookMin, difficulty: 1, steps, tags: ["variante-personal"], batchFriendly: false, source: "manual" }, ingredients);
-    await patch("meal_entries", e.id, { recipeId: saved.id, replacedFrom: e.replacedFrom ?? e.recipeId, notes: "Variante personal. Revisa la preparación y los hidratos.", locked: true });
+    await patch("meal_entries", e.id, { recipeId: saved.id, replacedFrom: e.replacedFrom ?? e.recipeId, notes: "Variante personal. Revisa la preparación y los hidratos.", locked: false });
   });
   const e = await tbl("meal_entries").get(entryId);
-  if (e) await refreshShoppingList(weekStartOf(e.date));
+  if (e) { await (await import("./meal-schedule")).syncMealRecord(entryId); await refreshShoppingList(weekStartOf(e.date)); }
 }
 
 export async function eatLeftover(stockId: string, slot: "lunch" | "dinner", portions: number) {

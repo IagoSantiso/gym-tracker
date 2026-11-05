@@ -42,7 +42,7 @@ async function generateWeekMenuInner(weekStart: string, opts: { kcalTarget: [num
   const rp = await all("recipe_prefs");
   const existingPlan = (await tbl("meal_plans").where("weekStart").equals(weekStart).toArray()).find(active);
   const existing = existingPlan ? (await tbl("meal_entries").where("mealPlanId").equals(existingPlan.id).toArray()).filter(active) : [];
-  const locked = opts.keepLocked ? existing.filter((e) => e.locked || e.status === "eaten" || e.status === "replaced") : [];
+  const locked = opts.keepLocked ? existing.filter((e) => e.status === "eaten" || e.status === "replaced") : [];
   const planned = (await tbl("planned_items").where("weekStart").equals(weekStart).toArray()).filter((i) => active(i) && i.kind !== "rest" && i.kind !== "walk" && i.status !== "cancelled");
   const pantry = await all("pantry_items");
   const menu = generateMenu(cat.recipes, cat.food, {
@@ -81,6 +81,7 @@ export async function swapMeal(entryId: string, recipeId: string) {
   const e = await tbl("meal_entries").get(entryId);
   if (!e) return;
   await patch("meal_entries", entryId, { recipeId, replacedFrom: e.replacedFrom ?? e.recipeId, status: "planned", notes: null });
+  await (await import("./meal-schedule")).syncMealRecord(entryId);
   const plan = await tbl("meal_plans").get(e.mealPlanId);
   if (plan) await refreshShoppingList(plan.weekStart);
 }

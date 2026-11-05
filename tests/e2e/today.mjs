@@ -51,7 +51,7 @@ try {
   await page.goto(base,{waitUntil:"networkidle"});
   await page.getByText("Menú pendiente",{exact:true}).click();
   await page.locator(".today-meal").first().waitFor();
-  assert.equal(await page.locator(".today-meal").count(),4,"all meals visible as collapsed summaries");
+  assert.ok((await page.locator(".today-meal").count())<=4,"only future meals remain in the pending menu");
   assert.equal(await page.locator(".today-meal[open]").count(),0);
   await page.locator(".today-meal > summary").first().click();
   await page.locator(".today-meal").first().getByRole("button",{name:"Cambiar",exact:true}).click();
