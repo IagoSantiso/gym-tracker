@@ -144,7 +144,7 @@ const READ: Record<string, (input: never) => Promise<unknown>> = {
     return {
       period_days: days, days_with_logs: n, note: "Promedios solo de días con registros; son cálculos sobre valores de referencia.",
       avg_per_logged_day: { kcal: avg("kcal"), protein_g: avg("p"), carbs_available_g: avg("c"), fiber_g: avg("f") },
-      this_week_menu: meals.map((m) => ({ date: m.date, slot: m.slot, recipe_id: m.recipeId, name: cat.recipe(m.recipeId)?.name, servings: m.servings, status: m.status, locked: m.locked })),
+      this_week_menu: meals.map((m) => ({ date: m.date, slot: m.slot, recipe_id: m.recipeId, name: cat.recipe(m.recipeId)?.name, servings: m.servings, status: m.status, locked: false })),
     };
   },
   async get_cgm_period_summary({ days }: { days: number }) {
@@ -309,7 +309,6 @@ async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
       const entries = await weekMeals(weekStartOf(c.date));
       const e = entries.find((m) => m.date === c.date && m.slot === c.slot);
       if (!e) return { content: `No hay comida prevista el ${c.date} (${c.slot}). Consulta get_nutrition_summary.`, isError: true };
-      if (e.locked || e.status === "eaten") return { content: `La comida del ${c.date} (${c.slot}) está bloqueada o ya hecha.`, isError: true };
       ops.push({ op: "update", table: "meal_entries", id: e.id, changes: { recipeId: rec.id, servings: c.servings, replacedFrom: e.recipeId, status: "planned" } });
       inverse.push({ op: "update", table: "meal_entries", id: e.id, changes: { recipeId: e.recipeId, servings: e.servings, replacedFrom: e.replacedFrom ?? null, status: e.status } });
     }
@@ -402,7 +401,6 @@ async function writeTool(name: string, input: unknown): Promise<ToolOutcome> {
     if (allergensOf(ings, byId).some((a) => excluded.includes(a))) return { content: "La variante contiene alérgenos o intolerancias excluidos por el usuario.", isError: true };
     const e = (await tbl("meal_entries").where("date").equals(x.date).toArray()).filter(active).find((m) => m.slot === x.slot);
     if (!e) return { content: `No hay comida prevista el ${x.date} (${x.slot}). Usa get_day_balance.`, isError: true };
-    if (e.locked || e.status !== "planned") return { content: "Esa comida está bloqueada o ya hecha.", isError: true };
     const orig = cat.recipe(e.recipeId);
     const before = orig ? recipeNutrition(orig.ingredients, cat.food, e.servings, orig.servings).totals : EMPTY_TOTALS();
     const t = recipeNutrition(ings, byId, 1, 1).totals;

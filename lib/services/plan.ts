@@ -147,7 +147,7 @@ async function afterMealChanges(ops: ProposalOp[]) {
   const weeks = new Set<string>();
   for (const id of ids) {
     const e = await tbl("meal_entries").get(id);
-    if (e) weeks.add(weekStartOf(e.date));
+    if (e) { await (await import("./meal-schedule")).syncMealRecord(id); weeks.add(weekStartOf(e.date)); }
   }
   for (const w of weeks) await refreshShoppingList(w);
 }

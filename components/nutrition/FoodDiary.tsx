@@ -69,7 +69,7 @@ export function FoodDiary({
                       <b>{l.title}</b>
                       <small>
                         {compact
-                          ? "Toca para editar"
+                          ? (l.note?.startsWith("Asumida") ? "Asumida del menú · toca para corregir" : "Toca para editar")
                           : `${localTime(l.eatenAt)} · ${l.items.length ? `${Math.round(l.items.reduce((a, i) => a + i.grams, 0))} g registrados` : "Cantidad registrada"}`}
                       </small>
                     </span>
