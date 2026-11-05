@@ -73,6 +73,7 @@ export interface Goals extends BaseRecord {
 }
 
 export interface Preferences extends BaseRecord {
+  favoriteExerciseIds?: string[] | null;
   foodContext?: { locality: string; shops: string; staples: string[]; avoid: string[] } | null;
   theme: "system" | "light" | "dark";
   mealsPerDay: number;
@@ -239,6 +240,7 @@ export interface WorkoutSession extends BaseRecord {
 }
 
 export interface ExerciseSet extends BaseRecord {
+  durationSec?: number | null;
   sessionId: string;
   exerciseId: string;
   exerciseOrder: number;
@@ -298,6 +300,7 @@ export interface ActivityStream extends BaseRecord {
 }
 
 export interface DailyActivity extends BaseRecord {
+  nutritionSignature?: string | null;
   date: string;
   steps?: number | null;
   activeMin?: number | null;
@@ -505,6 +508,7 @@ export interface NutrientTotals {
 }
 
 export interface FoodLog extends BaseRecord {
+  favorite?: boolean | null;
   stockUsage?: { id: string; grams: number; portions?: number }[] | null;
   date: string;
   eatenAt: string;

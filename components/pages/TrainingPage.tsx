@@ -1,4 +1,7 @@
 "use client";
+import { EditWorkoutModal, EditEnduranceModal } from "@/components/training/EditWorkout";
+import type { WorkoutSession, EnduranceSession } from "@/lib/db/types";
+import { PlanPage } from "./PlanPage";
 import { enduranceKcal, strengthKcal } from "@/lib/domain/nutrition/energy";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -16,7 +19,7 @@ import { addDays, formatDateEs, formatDuration, formatPace, localDate, weekStart
 import type { EquipmentId, MuscleId, WorkoutTemplate } from "@/lib/db/types";
 import { download } from "@/lib/services/data";
 
-const TABS = ["hoy", "rutinas", "biblioteca", "cardio", "historial", "volumen"] as const;
+const TABS = ["hoy", "rutinas", "biblioteca", "cardio", "historial", "volumen", "semana"] as const;
 type Tab = (typeof TABS)[number];
 
 export function TrainingPage() {
@@ -24,13 +27,14 @@ export function TrainingPage() {
   const [quick, setQuick] = useState<QuickKind>(null);
   return (
     <>
-      <PageHead eyebrow="Entrenamiento" title="Fuerza, carrera, bici y movimiento" actions={<button className="btn" onClick={() => setQuick("activity")}><Icon name="plus" />Actividad</button>}>
+      <PageHead eyebrow="Entrenamiento" title="Tu entrenamiento" actions={<button className="btn" onClick={() => setQuick("activity")}><Icon name="plus" />Añadir actividad</button>}>
         Ejecuta tu sesión serie a serie con temporizador y pantalla activa, o registra carrera, bici y cinta.
       </PageHead>
       <Tabs label="Entrenamiento" value={tab} onChange={setTab} tabs={[
-        { id: "hoy", label: "Sesiones" }, { id: "rutinas", label: "Rutinas" }, { id: "biblioteca", label: "Biblioteca" },
+        { id: "hoy", label: "Sesiones" }, {id:"semana",label:"Semana"}, { id: "rutinas", label: "Rutinas" }, { id: "biblioteca", label: "Biblioteca" },
         { id: "cardio", label: "Cardio" }, { id: "historial", label: "Historial" }, { id: "volumen", label: "Volumen y carga" },
       ]} />
+      {tab === "semana" && <PlanPage />}
       {tab === "hoy" && <SessionsTab />}
       {tab === "rutinas" && <RoutinesTab />}
       {tab === "biblioteca" && <LibraryTab />}
@@ -228,7 +232,7 @@ function CardioTab({ onAdd }: { onAdd: () => void }) {
           </div>
         ) : <Empty title="Sin actividades">Regístralas a mano, importa TCX/GPX o conecta Polar en Ajustes.</Empty>}
       </Card>
-      <Card title="Plan de carrera" sub="Progresión prudente (~5–8 %/semana) con descarga cada 4.ª semana. No es una garantía: ajústalo a cómo te recuperes y a la fuerza de piernas y la bici.">
+      <details className="quiet-disclosure"><summary>Herramientas de resistencia: plan de carrera y zapatillas</summary><Card title="Plan de carrera" sub="Progresión prudente (~5–8 %/semana) con descarga cada 4.ª semana. No es una garantía: ajústalo a cómo te recuperes y a la fuerza de piernas y la bici.">
         <div className="grid g3">
           <Field label="Objetivo">
             <select value={plan.distanceKm} onChange={(e) => setPlan({ ...plan, distanceKm: Number(e.target.value) })}>
@@ -273,12 +277,14 @@ function CardioTab({ onAdd }: { onAdd: () => void }) {
           <input className="input" style={{ maxWidth: 260 }} placeholder="Nombre de las zapatillas" value={shoeName} onChange={(e) => setShoeName(e.target.value)} aria-label="Nombre de las zapatillas" />
           <button className="btn sm" disabled={!shoeName.trim()} onClick={async () => { await put("shoes", { name: shoeName.trim(), startKm: 0, retired: false, notes: null }); setShoeName(""); }}>Añadir</button>
         </div>
-      </Card>
+      </Card></details>
     </div>
   );
 }
 
 function HistoryTab() {
+ const [editing,setEditing]=useState<WorkoutSession|null>(null);
+ const [editingEnd,setEditingEnd]=useState<EnduranceSession|null>(null);
   const sessions = useLive(async () => (await all("workout_sessions")).filter((s) => s.status === "completed"), []) ?? [];
   const endurance = useLive(() => all("endurance_sessions"), []) ?? [];
   const sets = useLive(() => all("exercise_sets"), []) ?? [];
@@ -307,7 +313,7 @@ function HistoryTab() {
                       <div className="s">{formatDateEs(e.date)} · {formatDuration(e.durationSec)}{e.distanceM ? ` · ${(e.distanceM / 1000).toLocaleString("es-ES", { maximumFractionDigits: 2 })} km` : ""}{e.treadmillSpeedKmh ? ` · ${e.treadmillSpeedKmh} km/h ${e.treadmillInclinePct ?? 0} %` : ""}{kg ? ` · ~${Math.round(enduranceKcal(e, kg) / 10) * 10} kcal` : ""}</div>
                       {e.whileWorking && <button className="link-btn xs" onClick={() => void patch("endurance_sessions", e.id, { whileWorking: false })}>¿No era en cinta de escritorio? Corregir</button>}
                     </div>
-                    <SourceBadge source={e.source} />
+                    <SourceBadge source={e.source} /><button className="text-action" onClick={()=>setEditingEnd(e)}>Editar</button>
                     <button className="icon-btn" aria-label="Borrar actividad" onClick={() => confirmAction("¿Borrar esta actividad?") && void remove("endurance_sessions", e.id)}><Icon name="trash" /></button>
                   </div>
                 );
@@ -325,9 +331,9 @@ function HistoryTab() {
                     </div>
                   </summary>
                   <div className="small" style={{ padding: "8px 0" }}>
-                    {ex.map((id) => <div key={id}><b>{findExercise(id)?.name ?? id}</b>: {ss.filter((x) => x.exerciseId === id).sort((a, b) => a.setIndex - b.setIndex).map((x) => `${x.weightKg ?? "PC"}×${x.reps ?? "?"}${x.rir != null ? ` @${x.rir}` : ""}`).join(" · ")}</div>)}
+                    {ex.map((id) => <div key={id}><b>{findExercise(id)?.name ?? id}</b>: {ss.filter((x) => x.exerciseId === id).sort((a, b) => a.setIndex - b.setIndex).map((x) => x.durationSec ? `${x.durationSec} s` : `${x.weightKg ?? "PC"}×${x.reps ?? "?"}${x.rir != null ? ` @${x.rir}` : ""}`).join(" · ")}</div>)}
                     {s.notes && <div className="muted">Notas: {s.notes}</div>}
-                    <button className="btn sm danger" style={{ marginTop: 6 }} onClick={() => confirmAction("¿Borrar esta sesión?") && void remove("workout_sessions", s.id)}>Borrar sesión</button>
+                    <button className="btn sm" onClick={()=>setEditing(s)}>Editar sesión</button><button className="btn sm danger" style={{ marginTop: 6 }} onClick={() => confirmAction("¿Borrar esta sesión?") && void remove("workout_sessions", s.id)}>Borrar sesión</button>
                   </div>
                 </details>
               );
@@ -335,6 +341,8 @@ function HistoryTab() {
           </div>
         </Card>
       ) : <Empty title="Aún no hay entrenamientos guardados">Empieza una sesión de fuerza o registra carrera, bici o cinta con «Actividad».</Empty>}
+      {editing&&<EditWorkoutModal session={editing} onClose={()=>setEditing(null)}/>}
+      {editingEnd&&<EditEnduranceModal session={editingEnd} onClose={()=>setEditingEnd(null)}/>}
       <p className="xs dim">kcal: gasto estimado por encima del reposo (±15 %). Cuentan en el balance de energía del día.</p>
     </div>
   );

@@ -13,12 +13,12 @@ try {
   const page=await ctx.newPage();const errors=[];page.on("pageerror",e=>errors.push(e.stack));
   await page.goto(base,{waitUntil:"networkidle"});
   await page.getByRole("heading",{name:"Hoy",exact:true}).waitFor();
-  await page.getByRole("heading",{name:"Tu energía de hoy",exact:true}).waitFor();
-  assert.ok(await page.getByText("Gasto estimado del día",{exact:true}).isVisible());
+  await page.getByRole("heading",{name:"Tu balance de hoy",exact:true}).waitFor();
+  assert.ok(await page.getByText("Gasto estimado del día",{exact:false}).isVisible());
   assert.equal(await page.getByRole("heading",{name:"Balance del día"}).count(),0,"health details are loaded only when requested");
   assert.equal(await page.locator('nav[aria-label="Secciones principales"] a').count(),4,"four destinations plus More");
-  await page.getByRole("button",{name:"Más",exact:true}).click();
-  await page.locator("#more-sheet").getByRole("link",{name:"Entrenamiento",exact:true}).waitFor();
+  await page.getByRole("button",{name:"Perfil y herramientas",exact:true}).click();
+  await page.locator("#more-sheet").getByRole("link",{name:"Ajustes",exact:true}).waitFor();
   await page.keyboard.press("Escape");
   assert.equal(await page.locator("#more-sheet").count(),0,"Escape dismisses the navigation sheet");
   assert.equal(await page.locator('[aria-controls="more-sheet"]').getAttribute("aria-expanded"),"false");
@@ -29,7 +29,7 @@ try {
   await page.getByText("Peso guardado",{exact:true}).waitFor();
   assert.equal(new URL(page.url()).pathname,"/","logging stays on Today");
   console.log("PASS Hoy: registro único, métricas bajo demanda y navegación accesible");
-  await page.getByRole("link",{name:"Preparar mi menú",exact:true}).click();
+  await page.goto(base+"/nutricion?tab=menu",{waitUntil:"networkidle"});
   await page.getByRole("button",{name:"Generar menú",exact:true}).click();
   await page.locator(".menu-day .meal-card").first().waitFor();
   assert.equal(await page.locator(".day-picker [role=tab]").count(),7);
@@ -49,6 +49,7 @@ try {
   await page.screenshot({animations:"disabled",path:"tests/e2e/screenshots/menu-day-mobile.png",fullPage:true});
   console.log("PASS menú: un día visible, resumen semanal y navegación con teclado");
   await page.goto(base,{waitUntil:"networkidle"});
+  await page.getByText("Menú pendiente",{exact:true}).click();
   await page.locator(".today-meal").first().waitFor();
   assert.equal(await page.locator(".today-meal").count(),4,"all meals visible as collapsed summaries");
   assert.equal(await page.locator(".today-meal[open]").count(),0);

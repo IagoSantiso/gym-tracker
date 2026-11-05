@@ -335,9 +335,7 @@ function IntegrationsTab() {
           <Field label="Sueño"><input type="file" accept=".csv,text/csv" onChange={(e) => void onFile(e.target.files?.[0], "sleep")} /></Field>
         </div>
       </Card>
-      <Card title="Android Health Connect" right={<span className="badge">No disponible</span>}>
-        <p className="small muted" style={{ margin: 0 }}>Health Connect es una API de Android en el dispositivo: una web/PWA no puede leerla. Está diseñado un companion Android (ver docs/INTEGRATIONS.md). Mientras, usa Polar o los CSV.</p>
-      </Card>
+
       {jobs.length > 0 && (
         <Card title="Últimas importaciones">
           <div className="list">
@@ -691,7 +689,7 @@ function DataTab() {
           </label>
         </div>
       </Card>
-      <Card title="Importar datos del Gym Tracker v2 (HTML)" sub="Los datos de la versión de un solo archivo viven en otro origen. En esa página abre la consola del navegador y ejecuta el comando; pega aquí el resultado.">
+      <details className="quiet-disclosure"><summary>Migrar desde una versión antigua</summary><Card title="Importar datos del Gym Tracker v2 (HTML)" sub="Los datos de la versión de un solo archivo viven en otro origen. En esa página abre la consola del navegador y ejecuta el comando; pega aquí el resultado.">
         <pre className="xs" style={{ whiteSpace: "pre-wrap", background: "var(--bg2)", padding: 10, borderRadius: 10 }}>copy(JSON.stringify(Object.fromEntries(["gymLogs","gymLoads","gymUI","gymSets"].map(k=&gt;[k,JSON.parse(localStorage.getItem(k)||"null")]))))</pre>
         <textarea className="input" style={{ minHeight: 90 }} value={legacy} onChange={(e) => setLegacy(e.target.value)} placeholder='{"gymLogs":[…],"gymLoads":{…}}' aria-label="JSON del Gym Tracker v2" />
         <button className="btn" style={{ marginTop: 8 }} disabled={!legacy.trim()} onClick={async () => {
@@ -703,7 +701,7 @@ function DataTab() {
           setLegacy("");
         }}>Importar</button>
       </Card>
-      <p className="xs dim">Versión de la app: {process.env.NEXT_PUBLIC_BUILD_ID ?? "dev"}</p>
+      </details><p className="xs dim">Versión de la app: {process.env.NEXT_PUBLIC_BUILD_ID ?? "dev"}</p>
       <Card title="Borrar todos mis datos" sub="Elimina todo de este dispositivo y, si has iniciado sesión, también de la nube. No se puede deshacer.">
         <button className="btn danger" onClick={async () => {
           if (!confirmAction("¿Borrar TODOS tus datos de este dispositivo (y de la nube si hay sesión)? Exporta antes si quieres conservarlos.")) return;

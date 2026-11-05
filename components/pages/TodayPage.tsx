@@ -1,10 +1,13 @@
 "use client";
+import { EditWorkoutModal, EditEnduranceModal } from "@/components/training/EditWorkout";
+import type { EnduranceSession } from "@/lib/db/types";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ActionButton, Card, Icon, Kpi, Modal, SourceBadge } from "@/components/ui";
 import { QuickLog, type QuickKind } from "@/components/log/QuickLog";
 import { MealRow } from "@/components/nutrition/MealCard";
 import { reconcileCompletedWorkouts } from "@/lib/services/training";
+import { FoodDiary } from "@/components/nutrition/FoodDiary";
 import { TodayEnergy } from "@/components/nutrition/TodayEnergy";
 import { CompleteWorkoutModal, WorkoutDetails } from "@/components/training/StrengthLog";
 import { findExercise } from "@/lib/domain/training/library";
@@ -29,6 +32,8 @@ import { agpPdfReports, readingsBetween } from "@/lib/services/cgm";
 
 export function TodayPage() {
   const p = useProfile();
+  const [editWorkout,setEditWorkout]=useState<WorkoutSession|null>(null);
+  const [editEndurance,setEditEndurance]=useState<EnduranceSession|null>(null);
   const pdfReports = useLive(() => agpPdfReports(), []) ?? [];
   const dia = useDiabetes();
   const [now,setNow] = useState(Date.now);
@@ -87,7 +92,7 @@ export function TodayPage() {
   }, [insightsOpen, dia.enabled, dia.veryLow, dia.targetLow, dia.targetHigh, dia.veryHigh]);
 
   const todayMeals = meals.filter((m) => m.date === today).sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
-  const needed = cat ? buildShoppingList(todayMeals.filter(m=>m.status==="planned" && !logs.some(l=>l.slot===m.slot)),cat.recipe,cat.food,[...stockGrams(pantry,today)].map(([foodId,grams])=>({foodId,grams}))).filter(i=>i.grams>i.pantryGrams) : [];
+  const needed = cat ? buildShoppingList(todayMeals.filter(m=>m.status==="planned" && !logs.some(l=>l.mealEntryId===m.id)),cat.recipe,cat.food,[...stockGrams(pantry,today)].map(([foodId,grams])=>({foodId,grams}))).filter(i=>i.grams>i.pantryGrams) : [];
   const done = weekAll.filter((i) => i.status === "done").length;
   const total = weekAll.filter((i) => i.kind !== "rest" && i.status !== "cancelled").length;
 
@@ -101,9 +106,12 @@ export function TodayPage() {
       <button className="btn primary" onClick={()=>setRegisterOpen(true)}><Icon name="plus" />Registrar</button>
     </header>
     <TodayEnergy date={today} />
+    <div className="daily-summary" aria-label="Resumen del día"><span><b>{logs.length}</b> comidas registradas</span><a href="#today-movement">{actual?.strength.some(s=>s.status==="completed") ? `${actual.strength.filter(s=>s.status==="completed").map(s=>s.title).join(" · ")} ✓` : actual?.endurance.length ? `${actual.endurance.map(e=>SPORT_LABEL[e.sport]).join(" · ")} ✓` : "Ejercicio pendiente"}</a></div>
     <div className="today-agenda">
+      <div className="stack"><FoodDiary date={today} compact onAdd={()=>setQuick("meal")} />
+      {cat && todayMeals.some(m=>m.status==="planned") && <details className="card"><summary>Menú pendiente</summary>{todayMeals.filter(m=>m.status==="planned").map(m=><details className="today-meal today-item" key={m.id}><summary>{cat.recipe(m.recipeId)?.name??"Plato previsto"}</summary><MealRow e={m} cat={cat}/></details>)}</details>}</div>
       <section aria-labelledby="today-movement" className="today-movement card">
-        <div className="today-section-head"><h2 id="today-movement">Ejercicios de hoy</h2><button className="text-action" onClick={()=>setQuick("strength")}>+ Añadir actividad</button></div>
+        <div className="today-section-head"><h2 id="today-movement">Ejercicios de hoy</h2><button className="text-action" onClick={()=>setQuick("activity")}>+ Añadir actividad</button></div>
         {pendingMovement.filter(it=>!actual?.strength.some(s=>s.plannedItemId===it.id || (s.templateId===it.templateId && s.dayIndex===it.dayIndex))).map(it=>{
           const routine = templates.find(t=>t.id===it.templateId)?.days[it.dayIndex ?? -1];
           const open = actual?.strength.find(s=>s.templateId===it.templateId && s.dayIndex===it.dayIndex && s.status==="in_progress");
@@ -118,23 +126,14 @@ export function TodayPage() {
           <summary><span><b>{s.title}</b><span className="s">{s.durationMin ? `${s.durationMin} min` : "Duración sin registrar"}</span></span><span className={`badge ${s.status==="completed" ? "ok" : "warn"}`}>{s.status==="completed" ? "Completada" : "Sin finalizar"}</span></summary>
           <WorkoutDetails session={s} />
           {s.status==="in_progress" && <button className="btn sm primary" onClick={()=>setComplete({session:s,planned:plan.find(i=>i.id===s.plannedItemId)})}>Ya la he realizado</button>}
-          <div className="row">{s.status==="completed" && <button className="text-action" onClick={()=>setComplete({session:s})}>Corregir duración</button>}
+          <div className="row">{s.status==="completed" && <button className="text-action" onClick={()=>setEditWorkout(s)}>Corregir sesión</button>}
           <Link className="text-action" href="/entrenamiento?tab=historial">Ver registro</Link></div>
         </details>)}
-        {actual?.endurance.map(e=><details key={e.id} className="today-session today-item"><summary><span><b>{SPORT_LABEL[e.sport]}</b><span className="s">{Math.round(e.durationSec/60)} min{e.distanceM ? ` · ${(e.distanceM/1000).toLocaleString("es-ES")} km` : ""}</span></span><span className="badge ok">Completada</span></summary><Link href="/entrenamiento?tab=historial" className="text-action">Ver registro</Link></details>)}
+        {actual?.endurance.map(e=><details key={e.id} className="today-session today-item"><summary><span><b>{SPORT_LABEL[e.sport]}</b><span className="s">{Math.round(e.durationSec/60)} min{e.distanceM ? ` · ${(e.distanceM/1000).toLocaleString("es-ES")} km` : ""}</span></span><span className="badge ok">Completada</span></summary><button className="text-action" onClick={()=>setEditEndurance(e)}>Corregir actividad</button></details>)}
         {!pendingMovement.length && !actual?.strength.length && !actual?.endurance.length && <p className="small muted">No hay entrenamientos previstos. Puedes añadir lo que hayas hecho.</p>}
-        <div className="today-section-foot"><button className="text-action" onClick={()=>setQuick("activity")}>+ Cardio u otra actividad</button><Link className="text-action" href="/plan">Ver semana</Link></div>
+        <div className="today-section-foot"><Link className="text-action" href="/entrenamiento?tab=semana">Ver semana</Link></div>
       </section>
-      <section aria-labelledby="today-food" className="today-food card">
-        <div className="today-section-head"><h2 id="today-food">Comidas de hoy</h2><Link href="/nutricion?tab=menu" className="text-action">Ver menú</Link></div>
-        {cat && todayMeals.filter(m=>!logs.some(l=>l.slot===m.slot)).map(m=><details className="today-item today-meal" key={m.id}>
-          <summary><span><span className="xs dim">{SLOT_LABEL[m.slot]}</span><b>{cat.recipe(m.recipeId)?.name ?? "Comida"}</b></span><span className="badge">{m.status==="planned" ? "Pendiente" : m.status==="eaten" ? "Registrada" : "Omitida"}</span></summary>
-          <MealRow e={m} cat={cat} openPortions />
-        </details>)}
-        {logs.map(l=><details className="today-item" key={l.id}><summary><span><span className="xs dim">{SLOT_LABEL[l.slot]}</span><b>{l.title}</b></span><span className="badge ok">Registrada</span></summary><p className="small">{Math.round(l.totals.kcal)} kcal · {Math.round(l.totals.carbsAvailableG)} g hidratos · <SourceBadge source={l.source} /></p><Link href="/nutricion?tab=hoy" className="text-action">Ver o corregir registro</Link></details>)}
-        {!todayMeals.length && !logs.length && <p className="small muted">Todavía no tienes menú. <Link href="/nutricion?tab=menu">Preparar mi menú</Link></p>}
-        <button className="text-action" onClick={()=>setQuick("meal")}>+ Registrar comida</button>
-      </section>
+
     </div>
     {(soon.length>0 || needed.length>0) && <section className="today-kitchen-note" aria-label="Para las comidas de hoy">
       <Icon name={soon.length ? "utensils" : "cart"} /><div>{soon.length>0 ? <><b>Usar pronto</b><p>{soon.slice(0,2).map(p=>p.name).join(" · ")}{soon.length>2 ? ` y ${soon.length-2} más` : ""}</p></> : <><b>Antes de cocinar</b><p>Revisa {needed.length} ingredientes que no figuran en tus existencias.</p></>}</div>
@@ -153,6 +152,8 @@ export function TodayPage() {
     <Modal open={registerOpen} onClose={()=>setRegisterOpen(false)} title="¿Qué quieres registrar?"><div className="register-choices">{([{kind:"meal",label:"Comida",icon:"utensils"},{kind:"strength",label:"Fuerza / abdominales",icon:"dumbbell"},{kind:"activity",label:"Cardio / otra actividad",icon:"run"},{kind:"glucose",label:"Glucemia o evento",icon:"drop"},{kind:"weight",label:"Peso",icon:"scale"},{kind:"checkin",label:"Cómo me encuentro",icon:"bed"},{kind:"note",label:"Nota",icon:"note"}] as const).map(a=><button key={a.kind} onClick={()=>openQuick(a.kind)}><Icon name={a.icon} />{a.label}</button>)}</div></Modal>
     <Modal open={adjustOpen} onClose={()=>setAdjustOpen(false)} title="Ajustar mi día"><AdjustDayCard embedded /></Modal>
     {complete && <CompleteWorkoutModal planned={complete.planned} session={complete.session} onClose={()=>setComplete(null)} />}
+    {editWorkout&&<EditWorkoutModal session={editWorkout} onClose={()=>setEditWorkout(null)}/>}
+    {editEndurance&&<EditEnduranceModal session={editEndurance} onClose={()=>setEditEndurance(null)}/>}
     <QuickLog kind={quick} onClose={()=>setQuick(null)} />
   </div>;
 }

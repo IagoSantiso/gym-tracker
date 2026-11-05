@@ -1,4 +1,5 @@
 /** Balance del día (lo comido + lo que queda del menú) y opciones para reajustar el resto. */
+import { dailyBudget, diarySignature, hasUnknownEnergy } from "@/lib/domain/nutrition/diary";
 import { tbl } from "@/lib/db/db";
 import { active, all } from "@/lib/db/repo";
 import { dayBalance, rebalanceOptions, type DayBalance, type DayTargets, type RebalanceOption, type RemainingMeal } from "@/lib/domain/nutrition/balance";
@@ -11,6 +12,8 @@ import { SPORT_LABEL } from "@/lib/domain/training/endurance";
 import { currentTargets } from "./targets";
 
 export interface DayBalanceView extends DayBalance {
+  confirmed: boolean;
+  budget: ReturnType<typeof dailyBudget>;
   date: string;
   logs: FoodLog[];
   remaining: RemainingMeal[];
@@ -29,9 +32,9 @@ export async function loadDayBalance(date = localDate(), cat?: Catalog): Promise
     currentTargets(),
     tbl("preferences").get("me"),
   ]);
-  const loggedSlots = new Set(logs.map((l) => l.slot));
+  const loggedEntries = new Set(logs.map((l) => l.mealEntryId).filter(Boolean));
   const remaining: RemainingMeal[] = entries
-    .filter((e) => e.status === "planned" && !loggedSlots.has(e.slot))
+    .filter((e) => e.status === "planned" && !loggedEntries.has(e.id))
     .flatMap((e) => {
       const recipe = c.recipe(e.recipeId);
       return recipe ? [{ id: e.id, slot: e.slot, recipe, servings: e.servings }] : [];
@@ -63,12 +66,12 @@ export async function loadDayBalance(date = localDate(), cat?: Catalog): Promise
   ] : [];
   const bmr = ct.estimate?.ok && ct.estimate.bmr ? (ct.estimate.bmr[0] + ct.estimate.bmr[1]) / 2 : null;
   const tdeeMid = ct.estimate?.ok && ct.estimate.tdee ? (ct.estimate.tdee[0] + ct.estimate.tdee[1]) / 2 : null;
-  const targetDeficit = ct.mode === "manual" && ct.kcal && tdeeMid ? Math.max(0, tdeeMid - ct.kcal[0]) : ct.estimate?.deficitKcal ?? 0;
+  const targetDeficit = ct.mode === "manual" && ct.kcal && tdeeMid ? Math.max(0, tdeeMid - (ct.kcal[0]+ct.kcal[1])/2) : ct.estimate?.deficitKcal ?? 0;
   const energy = energyDay({
         // pasos del día sin los de las sesiones a pie ya contadas como ejercicio (evita doble conteo)
     weightKg: kg, bmrMid: bmr, steps: Math.max(0, Math.max(0, ...act.map((a) => a.steps ?? 0)) - end.reduce((a, e) => a + sessionSteps(e), 0)) || null, exercise: exerciseToday,
-    intakeKcal: b.consumed.kcal, plannedRestKcal: b.plannedRest.kcal, targetDeficit,
-    dayClosed: date < localDate() || (remaining.length === 0 && new Date().getHours() >= 21),
+    intakeKcal: b.consumed.kcal, plannedRestKcal: b.plannedRest.kcal, targetDeficit, targetIntake:ct.kcal,
+    dayClosed: act.some(a=>a.nutritionSignature === diarySignature(logs)),
   });
   const compensation = energy.ok && energy.verdict === "over" && kg ? compensationOption({
     excess: energy.excess, weightKg: kg, maxPct: prefs?.compensationMaxPct ?? 30,
@@ -76,7 +79,9 @@ export async function loadDayBalance(date = localDate(), cat?: Catalog): Promise
     exerciseMinToday: end.reduce((a, e) => a + e.durationSec / 60, 0) + str.reduce((a, w) => a + (w.durationMin ?? 0), 0),
     hasDiabetes: !!diab?.enabled && diab.diabetesType === "type1",
   }) : null;
-  return { ...b, date, logs, remaining, targets, options, energy, compensation, exerciseToday };
+  const confirmed = logs.length > 0 && act.some(a=>a.nutritionSignature === diarySignature(logs));
+  const budget = dailyBudget(b.consumed.kcal, ct.kcal, logs.length, logs.some(hasUnknownEnergy), confirmed, energy.ok ? energy.spent : null);
+  return { ...b, date, logs, remaining, targets, options, energy, compensation, exerciseToday, confirmed, budget };
 }
 
 /** Añade al plan de hoy la actividad suave de compensación elegida (el usuario la ha pedido). */

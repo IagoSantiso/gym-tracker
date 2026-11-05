@@ -10,15 +10,15 @@ try {
   await new Promise((resolve,reject)=>{const t=setTimeout(()=>reject(new Error("Server timeout")),30000);server.stdout.on("data",d=>{if(/Ready/.test(String(d))){clearTimeout(t);resolve();}});server.stderr.on("data",d=>process.stderr.write(d));});
   browser=await chromium.launch();const ctx=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});const page=await ctx.newPage();const errors=[];page.on("pageerror",e=>errors.push(e.stack));
   await page.goto(base,{waitUntil:"networkidle"});
-  await page.getByRole("heading",{name:"Tu energía de hoy",exact:true}).waitFor();
+  await page.getByRole("heading",{name:"Tu balance de hoy",exact:true}).waitFor();
   assert.ok((await page.locator(".today-energy").boundingBox()).y < (await page.locator(".today-agenda").boundingBox()).y);
   // Synthetic profile and weight, in this isolated test browser only.
   await page.evaluate(()=>new Promise((resolve,reject)=>{const r=indexedDB.open("nexo");r.onsuccess=()=>{const db=r.result,t=db.transaction(["profiles","weight_entries"],"readwrite"),profiles=t.objectStore("profiles"),p=profiles.get("me"),now=new Date().toISOString();p.onsuccess=()=>profiles.put({...p.result,birthDate:"1990-01-01",heightCm:178,sex:"male"});t.objectStore("weight_entries").put({id:"synthetic-weight",date:now.slice(0,10),measuredAt:now,weightKg:82,source:"manual",createdAt:now,updatedAt:now});t.oncomplete=()=>{db.close();resolve();};t.onerror=()=>reject(t.error);};}));
   await page.reload({waitUntil:"networkidle"});
   await page.getByRole("button",{name:"Registrar",exact:true}).click();await page.getByRole("button",{name:"Comida",exact:true}).click();
-  await page.getByRole("button",{name:"Solo etiqueta",exact:true}).click();await page.getByLabel("Descripción",{exact:true}).fill("Comida sintética de prueba");await page.getByLabel("Energía",{exact:true}).fill("600");
-  await page.getByRole("button",{name:"Guardar",exact:true}).click();await page.getByText("Comida registrada",{exact:true}).waitFor();
-  await page.waitForFunction(()=>document.querySelector(".today-energy-values strong")?.textContent.includes("600"));
+  await page.getByRole("button",{name:"Registro rápido",exact:true}).click();await page.getByLabel("Qué has comido",{exact:true}).fill("Comida sintética de prueba");await page.getByLabel("Energía",{exact:true}).fill("600");
+  await page.getByRole("button",{name:"Guardar comida",exact:true}).click();await page.getByText("Comida registrada. Tu balance está actualizado.",{exact:true}).waitFor();
+  await page.waitForFunction(()=>document.querySelector(".energy-focus strong")?.textContent.includes("600"));
   await page.goto(base+"/entrenamiento/sesion?t=ppl-3d&d=1",{waitUntil:"networkidle"});
   await page.getByLabel("Peso serie 1 (kg)").first().fill("42,5");await page.getByLabel("Repeticiones serie 1",{exact:true}).first().fill("12");
   await page.getByRole("button",{name:"Serie 1 pendiente",exact:true}).first().click();
@@ -26,8 +26,9 @@ try {
   await page.getByRole("button",{name:"Añadir ejercicio extra"}).click();
   await page.getByLabel("Buscar ejercicio",{exact:true}).fill("crunch abdominal");
   await page.getByLabel("Ejercicio realizado",{exact:true}).selectOption("crunch");
+  await page.getByLabel("Repeticiones realizadas").fill("25");
   await page.getByRole("button",{name:"Guardar ejercicio realizado",exact:true}).click();
-  await page.getByText("Ejercicio guardado: ya cuenta en Hoy y en tu progreso",{exact:true}).waitFor();
+  await page.getByText("Series guardadas. Finaliza la sesión para contarla como completada.",{exact:true}).waitFor();
   await page.goto(base,{waitUntil:"networkidle"});
   const row=page.locator('.today-session[data-status="in_progress"]').filter({hasText:"Tracción"});
   await row.locator(":scope > summary").click();
@@ -52,7 +53,7 @@ try {
   console.log("PASS tracción + crunch 3×25: una sesión, cuatro series, guardado y última carga rellenada");
   await page.goto(base,{waitUntil:"networkidle"});await ctx.setOffline(true);await page.reload({waitUntil:"networkidle"});
   await page.locator('.today-session[data-status="completed"]').first().waitFor();
-  await page.getByRole("button",{name:"Añadir actividad"}).click();await page.getByLabel("Buscar ejercicio",{exact:true}).fill("crunch abdominal");await page.getByLabel("Ejercicio realizado",{exact:true}).selectOption("crunch");
+  await page.getByRole("button",{name:"Añadir actividad"}).click();await page.getByRole("button",{name:"Fuerza / abdominales",exact:true}).click();await page.getByLabel("Buscar ejercicio",{exact:true}).fill("crunch abdominal");await page.getByLabel("Ejercicio realizado",{exact:true}).selectOption("crunch");
   await page.getByRole("button",{name:"Guardar ejercicio realizado",exact:true}).click();await page.getByText("Ejercicio guardado: ya cuenta en Hoy y en tu progreso",{exact:true}).waitFor();
   await page.reload({waitUntil:"networkidle"});assert.equal(await page.locator('.today-session[data-status="completed"]').count(),2);
   for(const width of [320,768,1280]){await page.setViewportSize({width,height:900});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,`no overflow at ${width}px`);}

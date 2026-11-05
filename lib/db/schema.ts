@@ -50,7 +50,7 @@ export const TABLES: TableDef[] = [
   {
     name: "preferences", sync: true, comment: "Preferencias (singleton)",
     columns: {
-      foodContext: "jsonb", theme: "text!", mealsPerDay: "int!", allergies: "jsonb!", intolerances: "jsonb!", excludedFoods: "jsonb!",
+      favoriteExerciseIds: "jsonb", foodContext: "jsonb", theme: "text!", mealsPerDay: "int!", allergies: "jsonb!", intolerances: "jsonb!", excludedFoods: "jsonb!",
       cookingTimeMin: "int!", budget: "text!", autoApplyProgression: "bool!", adaptationMode: "bool!",
       deloadEveryWeeks: "int", deloadActiveWeek: "date", activeBreakReminderMin: "int",
       strengthDaysPerWeek: "int!", activeTemplateId: "text", compensationMaxPct: "int",
@@ -119,7 +119,7 @@ export const TABLES: TableDef[] = [
     indexes: ["sessionId", "exerciseId", "[sessionId+exerciseId]"],
     columns: {
       sessionId: "text!>workout_sessions", exerciseId: "text!", exerciseOrder: "int!", setIndex: "int!",
-      weightKg: "numeric", reps: "int", rir: "numeric", completed: "bool!", completedAt: "timestamptz",
+      durationSec: "int", weightKg: "numeric", reps: "int", rir: "numeric", completed: "bool!", completedAt: "timestamptz",
       isWarmup: "bool!", targetRepsMin: "int", targetRepsMax: "int", notes: "text",
     },
   },
@@ -145,7 +145,7 @@ export const TABLES: TableDef[] = [
   },
   {
     name: "daily_activity", sync: true, comment: "Pasos y minutos activos", indexes: ["date", "externalId"],
-    columns: { date: "date!", steps: "int", activeMin: "int", source: "text!", externalId: "text" },
+    columns: { nutritionSignature: "text", date: "date!", steps: "int", activeMin: "int", source: "text!", externalId: "text" },
   },
   {
     name: "sleep_records", sync: true, comment: "Sueño", indexes: ["date"],
@@ -222,7 +222,7 @@ export const TABLES: TableDef[] = [
   {
     name: "food_logs", sync: true, comment: "Comidas realizadas (con instantánea nutricional)", indexes: ["date"],
     columns: {
-      stockUsage: "jsonb", date: "date!", eatenAt: "timestamptz!", slot: "text!", mealEntryId: "text", recipeId: "text",
+      favorite: "bool", stockUsage: "jsonb", date: "date!", eatenAt: "timestamptz!", slot: "text!", mealEntryId: "text", recipeId: "text",
       servings: "numeric", items: "jsonb!", title: "text!", totals: "jsonb!", source: "text!", note: "text",
     },
   },

@@ -14,13 +14,13 @@ export const NAV: { href: string; label: string; short: string; icon: IconName }
   { href: "/", label: "Hoy", short: "Hoy", icon: "home" },
   { href: "/plan", label: "Plan", short: "Plan", icon: "calendar" },
   { href: "/entrenamiento", label: "Entrenamiento", short: "Entreno", icon: "dumbbell" },
-  { href: "/nutricion", label: "Cocina", short: "Cocina", icon: "utensils" },
+  { href: "/nutricion", label: "Comida", short: "Comida", icon: "utensils" },
   { href: "/diabetes", label: "Diabetes", short: "Glucosa", icon: "drop" },
-  { href: "/progreso", label: "Progreso", short: "Progreso", icon: "chart" },
+  { href: "/progreso", label: "Evolución", short: "Evolución", icon: "chart" },
   { href: "/asistente", label: "Asistente", short: "IA", icon: "chat" },
   { href: "/ajustes", label: "Ajustes", short: "Ajustes", icon: "settings" },
 ];
-const PRIMARY = [NAV[0], NAV[1], NAV[3], NAV[4]];
+const PRIMARY = [NAV[0], NAV[2], NAV[3], NAV[5]];
 const MORE = NAV.filter(n => !PRIMARY.some(p => p.href === n.href));
 
 const isActive = (path: string, href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
@@ -84,12 +84,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
               <span id="wake-slot" />
             </div>
-            <SyncIndicator />
+            <div className="row"><SyncIndicator /><button className="icon-btn" aria-label="Perfil y herramientas" aria-expanded={moreOpen} aria-controls="more-sheet" onClick={()=>setMoreOpen(v=>!v)}><Icon name="settings"/></button></div>
           </div>
         </header>
         <div className="layout">
           <nav className="side" aria-label="Secciones">
-            {NAV.map((n) => (
+            {PRIMARY.map((n) => (
               <Link key={n.href} href={n.href} aria-current={isActive(path, n.href) ? "page" : undefined}>
                 <Icon name={n.icon} />
                 {n.label}
@@ -120,14 +120,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                   {n.short}
                 </Link>
               ))}
-              <button aria-expanded={moreOpen} aria-controls="more-sheet" data-active={moreActive || undefined} onClick={() => setMoreOpen((v) => !v)}>
-                <Icon name="more" />
-                Más
-              </button>
+
             </nav>
             {moreOpen && (
               <div className="more-sheet" id="more-sheet" aria-label="Más secciones">
-                {MORE.map((n) => (
+                {MORE.filter(n=>n.href!=="/plan").map((n) => (
                   <Link key={n.href} href={n.href} aria-current={isActive(path, n.href) ? "page" : undefined}>
                     <Icon name={n.icon} />
                     {n.label}

@@ -1,4 +1,7 @@
 "use client";
+import { FoodDiary } from "@/components/nutrition/FoodDiary";
+import { TodayEnergy } from "@/components/nutrition/TodayEnergy";
+import { useProfile } from "@/lib/db/hooks";
 import { KitchenTab } from "@/components/nutrition/KitchenTab";
 import { deleteFoodLog } from "@/lib/services/kitchen";
 import { MealRow } from "@/components/nutrition/MealCard";
@@ -28,7 +31,9 @@ const TABS = ["hoy", "menu", "cocina", "compra", "recetas", "alimentos", "objeti
 type Tab = (typeof TABS)[number];
 
 export function NutritionPage() {
-  const [tab, setTab] = useTabParam<Tab>("cocina", TABS);
+  const [tab, setTab] = useTabParam<Tab>("hoy", TABS);
+  const profile=useProfile();
+  const [date,setDate]=useState(()=>localDate(Date.now(),profile.timezone));
   const [quick, setQuick] = useState<QuickKind>(null);
   const toolsRef = useRef<HTMLDetailsElement>(null);
   useEffect(()=>{
@@ -41,23 +46,23 @@ export function NutritionPage() {
   return (
     <>
       <div className="nutrition-back"><Link href="/">← Volver a Hoy</Link></div>
-      <PageHead eyebrow="Cocina" title={{hoy:"Balance y registros",menu:"Tu menú",cocina:"Mi cocina",compra:"Lista de la compra",recetas:"Recetas",alimentos:"Alimentos",objetivos:"Objetivos"}[tab]} />
+      <PageHead eyebrow="Comida" title={{hoy:"Tu diario de comida",menu:"Tu menú",cocina:"Mi cocina",compra:"Lista de la compra",recetas:"Recetas",alimentos:"Alimentos",objetivos:"Objetivos"}[tab]} />
       <div className="nutrition-nav">
-        <Tabs label="Cocina" value={tab} onChange={setTab} tabs={[{id:"menu",label:"Menú"},{id:"cocina",label:"Mi cocina"},{id:"compra",label:"Compra"}]} />
-        <details className="nutrition-tools" ref={toolsRef}><summary>Más</summary><div className="nutrition-tools-list">{([{id:"recetas",label:"Recetas"},{id:"alimentos",label:"Alimentos"},{id:"objetivos",label:"Objetivos"},{id:"hoy",label:"Balance y registros"}] as const).map(t=><button key={t.id} aria-current={tab===t.id ? "page" : undefined} onClick={e=>{setTab(t.id);e.currentTarget.closest("details")?.removeAttribute("open");}}>{t.label}</button>)}</div></details>
+        <Tabs label="Comida" value={tab} onChange={setTab} tabs={[{id:"hoy",label:"Diario"},{id:"menu",label:"Menú"},{id:"recetas",label:"Recetas"}]} />
+        <details className="nutrition-tools" ref={toolsRef}><summary>Herramientas</summary><div className="nutrition-tools-list">{([{id:"cocina",label:"Despensa"},{id:"compra",label:"Lista de compra"},{id:"alimentos",label:"Alimentos"},{id:"objetivos",label:"Objetivo de ingesta"}] as const).map(t=><button key={t.id} aria-current={tab===t.id ? "page" : undefined} onClick={e=>{setTab(t.id);e.currentTarget.closest("details")?.removeAttribute("open");}}>{t.label}</button>)}</div></details>
       </div>
       {!cat ? <div className="empty-state">Cargando…</div> : (
         <>
-          {tab === "hoy" && <><button className="btn" onClick={()=>setQuick("meal")}>Registrar comida</button><TodayTab cat={cat} /></>}
+          {tab === "hoy" && <TodayTab cat={cat} date={date} setDate={setDate} onAdd={()=>setQuick("meal")} />}
           {tab === "menu" && <MenuTab cat={cat} />}
           {tab === "cocina" && <KitchenTab cat={cat} />}
           {tab === "compra" && <ShoppingTab cat={cat} />}
           {tab === "recetas" && <RecipesTab cat={cat} />}
           {tab === "alimentos" && <FoodsTab cat={cat} />}
-          {tab === "objetivos" && <TargetsTab />}
+          {tab === "objetivos" && <Card title="Tu objetivo de ingesta"><p>El mismo objetivo se utiliza en Hoy, Comida y Evolución.</p><Link className="btn primary" href="/ajustes?tab=objetivos">Revisar objetivo</Link></Card>}
         </>
       )}
-      <QuickLog kind={quick} onClose={() => setQuick(null)} />
+      <QuickLog mealDate={date} kind={quick} onClose={() => setQuick(null)} />
     </>
   );
 }
@@ -75,50 +80,18 @@ function DayTotals({ logs, targets }: { logs: NutrientTotals[]; targets?: Awaite
   );
 }
 
-function TodayTab({ cat }: { cat: Catalog }) {
-  const today = localDate();
-  const ws = weekStartOf(today);
-  const meals = useLive(async () => (await weekMeals(ws)).filter((m) => m.date === today), [ws, today]);
-  const logs = useLive(async () => (await tbl("food_logs").where("date").equals(today).toArray()).filter(active).sort((a, b) => a.eatenAt.localeCompare(b.eatenAt)), [today]) ?? [];
-  const targets = useLive(() => currentTargets(), []);
-  const sorted = (meals ?? []).sort((a, b) => SLOT_ORDER.indexOf(a.slot) - SLOT_ORDER.indexOf(b.slot));
-  return (
-    <div className="stack">
-      <AdjustDayCard />
-      <DayTotals logs={logs.map((l) => l.totals)} targets={targets} />
-      <Card title="Comidas previstas hoy">
-        {meals && !meals.length ? <Empty title="Sin menú esta semana" action={<button className="btn primary" onClick={() => void generateWeekMenu(ws, { kcalTarget: targets?.kcal ?? null, keepLocked: true })}>Generar menú</button>} /> :
-          <div className="list">{sorted.map((e) => <MealRow key={e.id} e={e} cat={cat} openPortions />)}</div>}
-      </Card>
-      <BalanceCard cat={cat} />
-      <Card title="Registrado hoy">
-        {logs.length ? (
-          <div className="list">
-            {logs.map((l) => (
-              <div className="li" key={l.id}>
-                <div className="grow">
-                  <div className="t">{l.title}</div>
-                  <div className="s">{new Date(l.eatenAt).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })} · {SLOT_LABEL[l.slot]}</div>
-                  <NutrientLine t={l.totals} />
-                </div>
-                <SourceBadge source={l.source} />
-                <button className="icon-btn" aria-label="Borrar registro" onClick={() => confirmAction("¿Borrar este registro?") && void deleteFoodLog(l.id)}><Icon name="trash" /></button>
-              </div>
-            ))}
-          </div>
-        ) : <Empty title="Nada registrado todavía">Marca una comida prevista como hecha o usa «Registrar comida».</Empty>}
-      </Card>
-    </div>
-  );
+function TodayTab({ cat, onAdd, date, setDate }: { cat: Catalog; onAdd:()=>void;date:string;setDate:(date:string)=>void }) {
+  const p=useProfile();
+  const meals=useLive(async()=>(await tbl("meal_entries").where("date").equals(date).toArray()).filter(e=>active(e)&&e.status==="planned"),[date])??[];
+  return <div className="stack"><div className="diary-date"><Field label="Día del diario"><input type="date" value={date} onChange={e=>e.target.value&&setDate(e.target.value)}/></Field><button className="text-action" onClick={()=>setDate(localDate(Date.now(),p.timezone))}>Hoy</button></div>
+    <TodayEnergy date={date}/><FoodDiary date={date} onAdd={onAdd}/>
+    {meals.length>0&&<details className="card"><summary>Menú pendiente · {meals.length} platos</summary><p className="xs dim">Estos platos aún no cuentan como consumidos.</p>{meals.map(e=><MealRow key={e.id} e={e} cat={cat}/>)}</details>}
+    {date===localDate(Date.now(),p.timezone)&&<details className="quiet-disclosure"><summary>Nutrición y planificación en detalle</summary><BalanceCard cat={cat}/><AdjustDayCard/></details>}
+  </div>;
 }
 
-const ADJUST_EXAMPLES = [
-  "He desayunado tortilla francesa de 2 huevos y dos tostadas con café con leche. Para comer tengo arroz y puedo añadir otra cosa: ajusta lo que queda del día.",
-  "Me han ofrecido dos rosquillas en el trabajo: ¿cuánto suponen y cómo encajo la cena?",
-  "No tengo los ingredientes de la cena; tengo pollo, patata y calabacín.",
-];
+const ADJUST_EXAMPLES = ["Adapta mi cena a lo que tengo en casa", "Hoy tengo menos tiempo para cocinar"];
 
-/** Lenguaje natural → asistente: registrar lo comido y reajustar lo que queda (siempre como propuestas). */
 export function AdjustDayCard({embedded=false}: {embedded?:boolean} = {}) {
   const [text,setText]=useState("");
   const go=(q:string)=>location.assign(`/asistente?send=1&q=${encodeURIComponent(q)}`);
@@ -150,32 +123,9 @@ export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean 
     toast("Resto del día reajustado");
   };
   return (
-    <Card title="Balance del día" sub="Lo comido + lo que queda del menú, frente a tus rangos. Orientativo." right={b.energy.ok ? <span className={`badge ${b.energy.verdict === "on_track" ? "ok" : b.energy.verdict === "in_progress" ? "" : "warn"}`}>{VERDICT[b.energy.verdict]}</span> : undefined}>
-      {b.energy.ok && (
-        <div className="energy-box">
-          <div className="energy-grid">
-            <div><small>Consumido</small><b>{b.energy.intake.toLocaleString("es-ES")}</b>{b.energy.projectedIntake > b.energy.intake && <span className="xs dim">+{(b.energy.projectedIntake - b.energy.intake).toLocaleString("es-ES")} previsto</span>}</div>
-            <div><small>Gastado (estimado)</small><b>{b.energy.spent.toLocaleString("es-ES")}</b><span className="xs dim">basal+día {b.energy.base + b.energy.steps}{b.energy.exercise ? ` · ejercicio ${b.energy.exercise}` : ""}</span></div>
-            <div><small>Balance previsto</small><b>{b.energy.projectedBalance > 0 ? "+" : ""}{b.energy.projectedBalance.toLocaleString("es-ES")}</b><span className="xs dim">objetivo {b.energy.targetBalance ? `${b.energy.targetBalance.toLocaleString("es-ES")}` : "≈ 0"}</span></div>
-          </div>
-          <div className="small" style={{ marginTop: 6 }}>{b.energy.message}</div>
-          {b.exerciseToday.length > 0 && <div className="xs dim">Ejercicio de hoy: {b.exerciseToday.map((e) => `${e.label} (~${e.kcal} kcal)`).join(" · ")}</div>}
-        </div>
-      )}
-      {b.compensation && (
-        <div className="comp-box">
-          <div className="small"><b>Opción: compensar ~{b.compensation.kcal} kcal con actividad suave</b> ({b.compensation.pct} % del exceso; tu máximo: {prefsPct} %). El resto (~{b.compensation.restForMeals} kcal), ajustando lo que queda por comer.</div>
-          <div className="list">
-            {b.compensation.activities.map((a) => (
-              <div className="li" key={a.label}>
-                <div className="grow"><div className="t">{a.label}: {a.minutes} min</div><div className="s">Cinta {a.speedKmh.toLocaleString("es-ES")} km/h · inclinación {a.inclinePct} %</div></div>
-                <ActionButton className="btn sm" icon="plus" onRun={() => addCompensationToPlan(b.date, a, b.compensation!.kcal)} success="Añadida al plan de hoy">Al plan</ActionButton>
-              </div>
-            ))}
-          </div>
-          <ul className="xs dim" style={{ margin: "4px 0 0", paddingLeft: 16 }}>{b.compensation.notes.map((n) => <li key={n}>{n}</li>)}</ul>
-        </div>
-      )}
+    <Card title="Balance del día" sub="Lo comido + lo que queda del menú, frente a tus rangos. Orientativo." >
+
+
       {!b.logs.length && !b.remaining.length ? (
         <p className="small muted" style={{ margin: 0 }}>Cuando tengas menú o registres lo que comes (aunque no sea lo del menú), aquí verás cómo va el día frente a tus rangos.</p>
       ) : (<>
@@ -216,7 +166,7 @@ export function BalanceCard({ cat, compact }: { cat: Catalog; compact?: boolean 
           </div>
         </>
       )}
-      {b.logs.length > 0 && <p className="xs dim" style={{ marginBottom: 0 }}>Nunca se proponen saltarse comidas ni ejercicio intenso para compensar; la actividad suave está limitada a tu % máximo y 30 min. Prioriza mantener los hidratos de cada comida.</p>}
+      {b.logs.length > 0 && <p className="xs dim" style={{ marginBottom: 0 }}>Las previsiones incluyen el menú pendiente. No sustituyen un registro completo del día.</p>}
     </Card>
   );
 }
