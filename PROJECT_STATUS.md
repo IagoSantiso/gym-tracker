@@ -120,3 +120,6 @@ Verificación final: 179 pruebas unitarias generales y 2 regresiones adicionales
 
 ## Corrección de comidas bloqueadas · 2026-11-05
 Retiradas restricciones de IA y variantes locales para modificar comidas ya realizadas/bloqueadas. Menú y registro vinculado se actualizan juntos. Registro automático de comidas de hoy por horario local, explícitamente estimado, con edición/eliminación directa; no recrea eliminaciones ni rellena días anteriores. 183 pruebas unitarias pasan, incluidas regresiones de horario, idempotencia y corrección de una comida bloqueada completada.
+
+## Ping diario de Supabase · 2026-11-11
+Workflow `Daily Supabase ping`: 03:23 UTC, tres consultas mínimas sin recuperar registros, más disparo manual. Script `scripts/ping-supabase.mjs`, sin dependencias ni secretos administrativos. Proyecto comprobado activo; la sincronización del móvil continúa siendo independiente.
